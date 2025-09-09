@@ -104,8 +104,6 @@ using Mafi.Core.Factory.Recipes;
 using Mafi.Core.Factory.Machines;
 using Mafi.Core.Factory.Datacenters;
 using Mafi.Core.Factory.NuclearReactors;
-using Mafi.Core.Entities.Static.Layout;
-using Mafi.Core.Maintenance;
 using Mafi.Core.Entities.Dynamic;
 using Mafi.Core.Fleet;
 using Mafi.Core.Vehicles.Excavators;
@@ -123,22 +121,26 @@ using Mafi.Core.Buildings.SpaceProgram;
 using Mafi.Core.Buildings.Waste;
 using Mafi.Core.Buildings.RainwaterHarvesters;
 using Mafi.Collections.ImmutableCollections;
-using Mafi.Collections.ReadonlyCollections;
 using Mafi.Base.Prototypes.Machines.PowerGenerators;
 using System.Reflection;
 using Mafi.Core.Buildings.Mine;
-using Mafi.Core.Research;
 using Mafi.Core.World.Contracts;
 using Mafi.Core.Game;
 using Mafi.Base.Prototypes.Machines;
 using Mafi.Core.Factory.Transports;
 using System.Linq;
+using Mafi.Core.Localization.Quantity;
+using Mafi.Unity;
+using System;
+using System.Diagnostics;
 
-namespace DataExtractorMod {
+namespace DataExtractorMod
+{
+
     public sealed class DataExtractor : IMod
     {
         public string Name => "Data Extractor Mod By ItsDesm (modified by doubleaxe)";
-
+        public AssetsDb assetsDb { get; private set; }
         public int Version => 1;
 
         public bool IsUiOnly => false;
@@ -147,11 +149,14 @@ namespace DataExtractorMod {
 
         public static readonly string MOD_ROOT_DIR_PATH = new FileSystemHelper().GetDirPath(FileType.Mod, false);
         public static readonly string MOD_DIR_PATH = Path.Combine(MOD_ROOT_DIR_PATH, "DataExtractor");
+        public static readonly string MOD_OUTPUT_PATH = Path.Combine(MOD_DIR_PATH, "Outputs");
         public static readonly string PLUGIN_DIR_PATH = Path.Combine(MOD_DIR_PATH, "Plugins");
 
         public static readonly bool DEBUG = true;
-
-        public DataExtractor() {
+        public struct spriteToExport { public string category; public string icon; };
+        public Dictionary<string, spriteToExport> sprites = new Dictionary<string, spriteToExport>();
+        public DataExtractor()
+        {
             //AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
             Log.Info(MOD_ROOT_DIR_PATH);
             Log.Info(MOD_DIR_PATH);
@@ -159,7 +164,46 @@ namespace DataExtractorMod {
             Log.Info("Loaded Data Extractor Mod By ItsDesm");
         }
 
+        public void EarlyInit(DependencyResolver resolver)
+        {
+            Log.Info("Data Extractor Mod EarlyInit");
+        }
 
+
+        public void Initialize(DependencyResolver resolver, bool gameWasLoaded)
+        {
+            Log.Info("Data Extractor Mod EarlyInit");
+            //assetsDb = resolver.Resolve<AssetsDb>();
+            //foreach (var sprite in this.sprites)
+            //{
+            //    var icon = assetsDb.GetSharedSprite(sprite.Value.icon);
+            //    assetsDb.TryGetSharedAsset<Texture2D>(sprite.Value.icon, out var texture2d);
+            //    Log.Info("Icon Export" + sprite.Key);
+            //    var png = UnityEngine.ImageConversion.EncodeToPNG(texture2d);
+            //    this.WriteFile(sprite.Value.category + "_" + sprite.Key + ".png", png);
+            //}
+        }
+
+        private void WriteOutput(string fileName, string content)
+        {
+            if (!Directory.Exists(MOD_OUTPUT_PATH))
+            {
+                Directory.CreateDirectory(MOD_OUTPUT_PATH);
+            }
+            string filePath = Path.Combine(MOD_OUTPUT_PATH, fileName);
+            File.WriteAllText(filePath, content);
+            Log.Info($"Wrote {fileName} to {MOD_OUTPUT_PATH}");
+        }
+        public void WriteFile(string fileName, byte[] bytes)
+        {
+            if (!Directory.Exists(MOD_OUTPUT_PATH))
+            {
+                Directory.CreateDirectory(MOD_OUTPUT_PATH);
+            }
+            string filePath = Path.Combine(MOD_OUTPUT_PATH, fileName);
+            File.WriteAllBytes(filePath, bytes);
+            Log.Info($"Wrote {fileName} to {MOD_OUTPUT_PATH}");
+        }
 
         /*
          * -------------------------------------
@@ -167,9 +211,11 @@ namespace DataExtractorMod {
          * -------------------------------------
         */
 
+
         public static string MakeRecipeIOJsonObject(
             string name,
-            string quantity
+            string quantity,
+            bool optional = false
         )
         {
             System.Text.StringBuilder obj = new System.Text.StringBuilder();
@@ -178,6 +224,10 @@ namespace DataExtractorMod {
 
             props.Add($"\"name\":\"{name}\"");
             props.Add($"\"quantity\":{quantity}");
+            if (optional)
+            {
+                props.Add($"\"optional\":true");
+            }
 
             obj.AppendLine("{");
             obj.AppendLine(props.JoinStrings(","));
@@ -227,9 +277,18 @@ namespace DataExtractorMod {
             );
         }
 
-        public static string MakeMachineJsonObject2 (
+        public struct MachineCoolant
+        {
+            public ProductProto productIn;
+            public ProductProto productOut;
+            public int quantityIn;
+            public int quantityOut;
+            public bool optional;
+        }
+
+        public static string MakeMachineJsonObject2(
             string id,
-            string name, 
+            string name,
             string category,
             string next_tier,
             string workers,
@@ -245,13 +304,13 @@ namespace DataExtractorMod {
             string research_speed,
             string icon,
             string build_costs,
-            string recipes
+            string recipes,
+            MachineCoolant? coolant = null
         )
         {
             System.Text.StringBuilder obj = new System.Text.StringBuilder();
 
             List<string> props = new List<string> { };
-
             props.Add($"\"id\":\"{id}\"");
             props.Add($"\"name\":\"{name}\"");
             props.Add($"\"category\":\"{category}\"");
@@ -270,6 +329,16 @@ namespace DataExtractorMod {
             props.Add($"\"icon_path\":\"{icon}\"");
             props.Add($"\"build_costs\":[{build_costs}]");
             props.Add($"\"recipes\":[{recipes}]");
+
+            if (coolant.HasValue)
+            {
+                MachineCoolant c = coolant.Value;
+                props.Add($"\"coolant\":{{\"product_in\":\"{c.productIn.Strings.Name.ToString()}\"");
+                props.Add($"\"product_out\":\"{c.productOut.Strings.Name.ToString()}\"");
+                props.Add($"\"quantity_in\":{c.quantityIn}");
+                props.Add($"\"quantity_out\":{c.quantityOut}");
+                props.Add($"\"optional\":{c.optional.ToString().ToLower()} }}");
+            }
 
             obj.AppendLine("{");
             obj.AppendLine(props.JoinStrings(","));
@@ -318,7 +387,8 @@ namespace DataExtractorMod {
             string name,
             string duration,
             string inputs,
-            string outputs
+            string outputs,
+            float power_multiplier = 1.0f
         )
         {
             System.Text.StringBuilder obj = new System.Text.StringBuilder();
@@ -328,6 +398,7 @@ namespace DataExtractorMod {
             props.Add($"\"id\":\"{id}\"");
             props.Add($"\"name\":\"{name}\"");
             props.Add($"\"duration\":{duration}");
+            props.Add($"\"power_multiplier\":{power_multiplier.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}");
             props.Add($"\"inputs\":[{inputs}]");
             props.Add($"\"outputs\":[{outputs}]");
 
@@ -365,7 +436,7 @@ namespace DataExtractorMod {
             List<string> props = new List<string> { };
 
             props.Add($"\"product\":\"{product}\"");
-            props.Add($"\"quantity\":{quantity}");            
+            props.Add($"\"quantity\":{quantity}");
 
             obj.AppendLine("{");
             obj.AppendLine(props.JoinStrings(","));
@@ -394,7 +465,7 @@ namespace DataExtractorMod {
             obj.AppendLine("}");
             return obj.ToString();
         }
-        
+
         public static string MakeGunJsonObject(
             string name,
             string range,
@@ -418,7 +489,7 @@ namespace DataExtractorMod {
             obj.AppendLine("}");
             return obj.ToString();
         }
-        
+
         public static string MakeArmorJsonObject(
             string name,
             string hp,
@@ -464,7 +535,7 @@ namespace DataExtractorMod {
             obj.AppendLine("}");
             return obj.ToString();
         }
-        
+
         public static string MakeTankJsonObject(
             string name,
             string added_capacity,
@@ -489,7 +560,9 @@ namespace DataExtractorMod {
             string id,
             string name,
             string type,
-            string icon
+            string icon,
+            ColorRgba color,
+            FormatInfo format
         )
         {
             System.Text.StringBuilder obj = new System.Text.StringBuilder();
@@ -501,6 +574,9 @@ namespace DataExtractorMod {
             props.Add($"\"icon\":\"{productNameToIcon(name)}\"");
             props.Add($"\"type\":\"{type}\"");
             props.Add($"\"icon_path\":\"{icon}\"");
+            // Make sure we don't add "default" colors. 
+            if (color.A > 0) props.Add($"\"color\":\"{color}\"");
+            props.Add($"\"unit\":\"{format.UnitStr}\"");
 
             obj.AppendLine("{");
             obj.AppendLine(props.JoinStrings(","));
@@ -544,17 +620,17 @@ namespace DataExtractorMod {
             return obj.ToString();
         }
 
-         public static string MakeContractJsonObject(
-            string id,
-            string product_to_buy_name,
-            string product_to_buy_quantity,
-            string product_to_pay_with_name,
-            string product_to_pay_with_quantity,
-            string unity_per_month,
-            string unity_per_100_bought,
-            string unity_to_establish,
-            string min_reputation_required
-        )
+        public static string MakeContractJsonObject(
+           string id,
+           string product_to_buy_name,
+           string product_to_buy_quantity,
+           string product_to_pay_with_name,
+           string product_to_pay_with_quantity,
+           string unity_per_month,
+           string unity_per_100_bought,
+           string unity_to_establish,
+           string min_reputation_required
+       )
         {
             System.Text.StringBuilder obj = new System.Text.StringBuilder();
 
@@ -603,7 +679,7 @@ namespace DataExtractorMod {
         {
             n = n.Replace("(", "");
             n = n.Replace(")", "");
-            if(n.EndsWith(" IV"))
+            if (n.EndsWith(" IV"))
                 n = n.Replace(" IV", "4");
             if (n.EndsWith(" V"))
                 n = n.Replace(" V", "5");
@@ -624,47 +700,66 @@ namespace DataExtractorMod {
             string defaultName = ""
         )
         {
-            var duration = (recipe.Duration / 10);
-            var inputs = recipe.AllUserVisibleInputs;
-            var outputs = recipe.AllUserVisibleOutputs;
-
-            string recipe_id = recipe.Id.ToString();
-            string recipe_name = (recipe is RecipeProto) ? ((RecipeProto)recipe).Strings.Name.ToString() : recipe.Id.ToString();
-            if(recipe_id.Equals("RecipeForUiData") && !defaultId.IsEmpty())
+            String stage = "Begin";
+            try
             {
-                recipe_id = defaultId;
+                var duration = (recipe.Duration / 10);
+                var inputs = recipe.AllUserVisibleInputs;
+                var outputs = recipe.AllUserVisibleOutputs;
+
+                string recipe_id = recipe.Id.ToString();
+                string recipe_name = (recipe is RecipeProto) ? ((RecipeProto)recipe).Strings.Name.ToString() : recipe.Id.ToString();
+                if (recipe_id.Equals("RecipeForUiData") && !defaultId.IsEmpty())
+                {
+                    recipe_id = defaultId;
+                }
+                if (recipe_name.Equals("RecipeForUiData") && !defaultName.IsEmpty())
+                {
+                    recipe_name = defaultName;
+                }
+                string recipe_duration = duration.ToString();
+                float power_mult = Percent.Hundred.ToFloat();
+                stage = "Before PowerMultiplier";
+                if (recipe is RecipeProto)
+                {
+                    power_mult = ((RecipeProto)recipe).PowerMultiplier.ToFloat();
+                }
+                List<string> inputItems = new List<string> { };
+                List<string> outputItems = new List<string> { };
+                stage = "Before Inputs Loop";
+                inputs.ForEach(delegate (RecipeInput input)
+                {
+                    stage = "Inside Inputs Loop for " + input.Product.Strings.Name.ToString();
+                    Option<ProductProto> product = protosDb.Get<ProductProto>(input.Product.Id);
+                    string machineRecipeInputJson = MakeRecipeIOJsonObject(input.Product.Strings.Name.ToString(), input.Quantity.Value.ToString());
+                    inputItems.Add(machineRecipeInputJson);
+                });
+
+                outputs.ForEach(delegate (RecipeOutput output)
+                {
+                    stage = "Inside Outputs Loop for " + output.Product.Strings.Name.ToString();
+                    Option<ProductProto> product = protosDb.Get<ProductProto>(output.Product.Id);
+                    string machineRecipeOutputJson = MakeRecipeIOJsonObject(output.Product.Strings.Name.ToString(), output.Quantity.Value.ToString());
+                    outputItems.Add(machineRecipeOutputJson);
+                });
+                stage = "Before MakeRecipeJsonObject";
+                string machineRecipeJson = MakeRecipeJsonObject(
+                    recipe_id,
+                    recipe_name,
+                    recipe_duration,
+                    inputItems.JoinStrings(","),
+                    outputItems.JoinStrings(","),
+                    power_mult
+                );
+                return machineRecipeJson;
             }
-            if (recipe_name.Equals("RecipeForUiData") && !defaultName.IsEmpty())
+            catch (Exception e)
             {
-                recipe_name = defaultName;
+                Log.Info("###################################################");
+                Log.Info("ERROR in MakeRecipeJsonObject at stage: " + stage);
+                Log.Info("###################################################");
+                throw e;
             }
-            string recipe_duration = duration.ToString();
-
-            List<string> inputItems = new List<string> { };
-            List<string> outputItems = new List<string> { };
-
-            inputs.ForEach(delegate (RecipeInput input)
-            {
-                Option<ProductProto> product = protosDb.Get<ProductProto>(input.Product.Id);
-                string machineRecipeInputJson = MakeRecipeIOJsonObject(input.Product.Strings.Name.ToString(), input.Quantity.Value.ToString());
-                inputItems.Add(machineRecipeInputJson);
-            });
-
-            outputs.ForEach(delegate (RecipeOutput output)
-            {
-                Option<ProductProto> product = protosDb.Get<ProductProto>(output.Product.Id);
-                string machineRecipeOutputJson = MakeRecipeIOJsonObject(output.Product.Strings.Name.ToString(), output.Quantity.Value.ToString());
-                outputItems.Add(machineRecipeOutputJson);
-            });
-
-            string machineRecipeJson = MakeRecipeJsonObject(
-                recipe_id,
-                recipe_name,
-                recipe_duration,
-                inputItems.JoinStrings(","),
-                outputItems.JoinStrings(",")
-            );
-            return machineRecipeJson;
         }
 
         public static List<string> MakeRecipesJsonObject(
@@ -681,6 +776,7 @@ namespace DataExtractorMod {
             {
                 string defaultIdThis = defaultId.IsEmpty() ? defaultId : (defaultId + ((i != 0) ? i.ToString() : ""));
                 string defaultNameThis = defaultName.IsEmpty() ? defaultName : (defaultName + ((i != 0) ? (" " + i.ToString()) : ""));
+
                 string machineRecipeJson = MakeRecipeJsonObject(
                     protosDb,
                     recipe,
@@ -712,9 +808,13 @@ namespace DataExtractorMod {
          * The logic runs within the RegisterDepencies stage due to me not being able to get the code running correctly otherwise.
          * This feels like it might not be the right place for it, but it works so...
         */
-
         public void RegisterDependencies(DependencyResolverBuilder depBuilder, ProtosDb protosDb, bool gameWasLoaded)
         {
+        }
+        public void RegisterPrototypes(ProtoRegistrator registrator)
+        {
+
+            ProtosDb protosDb = registrator.PrototypesDb;
 
             List<string> DUMP = new List<string> { };
 
@@ -899,7 +999,7 @@ namespace DataExtractorMod {
                         );
                         vehicleProducts.Add(vehicleProductJson);
                     }
-                    
+
                     string vehicleJson = MakeTankJsonObject(
                         item.Strings.Name.ToString(),
                         item.AddedFuelCapacity.ToString(),
@@ -918,7 +1018,7 @@ namespace DataExtractorMod {
             }
             upgradeItems.Add($"\"fuel_tanks\":[{tankItems.JoinStrings(",")}]");
 
-            File.WriteAllText("c:/temp/ship_upgrades.json", $"{{\"game_version\":\"{game_version}\",{upgradeItems.JoinStrings(",")}}}");
+            this.WriteOutput("ship_upgrades.json", $"{{\"game_version\":\"{game_version}\",{upgradeItems.JoinStrings(",")}}}");
 
             /*
              * -------------------------------------
@@ -929,7 +1029,7 @@ namespace DataExtractorMod {
             List<string> vehicleItems = new List<string> { };
 
             List<DrivingEntityProto> vehicles = new List<DrivingEntityProto> { };
-            foreach(TruckProto vehicle in protosDb.All<TruckProto>())
+            foreach (TruckProto vehicle in protosDb.All<TruckProto>())
             {
                 vehicles.Add(vehicle);
             }
@@ -974,7 +1074,7 @@ namespace DataExtractorMod {
 
             }
 
-            File.WriteAllText("c:/temp/vehicles.json", $"{{\"game_version\":\"{game_version}\",\"vehicles\":[{vehicleItems.JoinStrings(",")}]}}");
+            this.WriteOutput("vehicles.json", $"{{\"game_version\":\"{game_version}\",\"vehicles\":[{vehicleItems.JoinStrings(",")}]}}");
 
             /*
              * -------------------------------------
@@ -1013,9 +1113,9 @@ namespace DataExtractorMod {
                         next_tier = generator.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in generator.Graphics.Categories)
+                    foreach (var cat in generator.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 ;
                     List<string> machinesProducts = new List<string> { };
@@ -1061,6 +1161,7 @@ namespace DataExtractorMod {
                     Log.Info("###################################################");
                 }
             }
+            Log.Info("Completed Turbines");
 
             // -------------------------
             // Generators
@@ -1086,9 +1187,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in generator.Graphics.Categories)
+                    foreach (var cat in generator.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 ;
                     List<string> machinesProducts = new List<string> { };
@@ -1135,6 +1236,7 @@ namespace DataExtractorMod {
                     Log.Info("###################################################");
                 }
             }
+            Log.Info("Completed Generators");
 
             // -------------------------
             // Solar Panels
@@ -1160,9 +1262,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in generator.Graphics.Categories)
+                    foreach (var cat in generator.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 ;
                     List<string> machinesProducts = new List<string> { };
@@ -1205,6 +1307,8 @@ namespace DataExtractorMod {
                 }
             }
 
+            Log.Info("Completed Solar Panels");
+
             // -------------------------
             // Disel Generator
             // -------------------------
@@ -1229,9 +1333,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in generator.Graphics.Categories)
+                    foreach (var cat in generator.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 ;
                     List<string> machinesProducts = new List<string> { };
@@ -1276,6 +1380,8 @@ namespace DataExtractorMod {
                 }
             }
 
+            Log.Info("Completed Diesel Generators");
+
             /*
              * -------------------------------------
              * Part 4  - General Machines.
@@ -1307,14 +1413,14 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
                     string next_tier = "";
-                    if(machine.Upgrade.NextTier.HasValue)
+                    if (machine.Upgrade.NextTier.HasValue)
                     {
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -1355,11 +1461,13 @@ namespace DataExtractorMod {
                 }
                 catch
                 {
-                    Log.Info("###################################################");                    
-                    Log.Info("ERROR"+machine.ToString());
+                    Log.Info("###################################################");
+                    Log.Info("ERROR" + machine.ToString());
                     Log.Info("###################################################");
                 }
             }
+
+            Log.Info("Completed General Machines");
 
             /*
              * -------------------------------------
@@ -1401,9 +1509,9 @@ namespace DataExtractorMod {
                         next_tier = item.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in item.Graphics.Categories)
+                    foreach (var cat in item.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -1449,7 +1557,7 @@ namespace DataExtractorMod {
                         {
                             foreach (ProductProto fertilizer in fertilizersArray)
                             {
-                                List<string> inputItems2 = new List<string> ( inputItems );
+                                List<string> inputItems2 = new List<string>(inputItems);
                                 Option<FertilizerProductParam> fertilizerParam = fertilizer.GetParam<FertilizerProductParam>();
                                 Fix64 fertilizerFerDay = (crop.ConsumedFertilityPerDay.ToFix64() * crop.DaysToGrow) / fertilizerParam.Value.FertilityPerQuantity.ToFix64();
                                 machineRecipeInputJson = MakeRecipeIOJsonObject(fertilizer.Strings.Name.ToString(), fertilizerFerDay.ScaledBy(item.DemandsMultiplier).ToFix32().ToString());
@@ -1509,6 +1617,7 @@ namespace DataExtractorMod {
                     Log.Info("###################################################");
                 }
             }
+            Log.Info("Completed Farms");
 
             IEnumerable<AnimalFarmProto> animalFarms = protosDb.All<AnimalFarmProto>();
             foreach (AnimalFarmProto item in animalFarms)
@@ -1537,9 +1646,9 @@ namespace DataExtractorMod {
                         next_tier = item.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in item.Graphics.Categories)
+                    foreach (var cat in item.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -1568,7 +1677,7 @@ namespace DataExtractorMod {
 
                     string machineRecipeOutputJson;
                     var produced = item.ProducedPerAnimalPerMonth;
-                    if(produced != null)
+                    if (produced != null)
                     {
                         machineRecipeOutputJson = MakeRecipeIOJsonObject(produced.Value.Product.Strings.Name.ToString(), (item.AnimalsCapacity * produced.Value.Quantity.Value).ToString());
                         outputItems.Add(machineRecipeOutputJson);
@@ -1616,6 +1725,7 @@ namespace DataExtractorMod {
                     Log.Info("###################################################");
                 }
             }
+            Log.Info("Completed Animal Farms");
 
             IEnumerable<CargoDepotProto> cargoDepots = protosDb.All<CargoDepotProto>();
             foreach (CargoDepotProto item in cargoDepots)
@@ -1644,9 +1754,9 @@ namespace DataExtractorMod {
                         next_tier = item.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in item.Graphics.Categories)
+                    foreach (var cat in item.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -1690,6 +1800,7 @@ namespace DataExtractorMod {
                     Log.Info("###################################################");
                 }
             }
+            Log.Info("Completed Cargo Depots");
 
             IEnumerable<CargoDepotModuleProto> cargoModules = protosDb.All<CargoDepotModuleProto>();
             foreach (CargoDepotModuleProto item in cargoModules)
@@ -1718,9 +1829,9 @@ namespace DataExtractorMod {
                         next_tier = item.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in item.Graphics.Categories)
+                    foreach (var cat in item.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -1764,6 +1875,7 @@ namespace DataExtractorMod {
                     Log.Info("###################################################");
                 }
             }
+            Log.Info("Completed Cargo Modules");
 
             IEnumerable<ResearchLabProto> labs = protosDb.All<ResearchLabProto>();
             foreach (ResearchLabProto item in labs)
@@ -1793,15 +1905,16 @@ namespace DataExtractorMod {
                         next_tier = item.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    if ( item.Id.ToString() != "ResearchLab1"){
+                    if (item.Id.ToString() != "ResearchLab1")
+                    {
 
                         List<string> recipeItems = MakeRecipesJsonObject(protosDb, item.Recipes.AsEnumerable(), id, name);
                         recipes = recipeItems.JoinStrings(",");
                     }
 
-                    foreach (ToolbarCategoryProto cat in item.Graphics.Categories)
+                    foreach (var cat in item.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -1845,6 +1958,7 @@ namespace DataExtractorMod {
                     Log.Info("###################################################");
                 }
             }
+            Log.Info("Completed Research Labs");
 
             IEnumerable<VehicleDepotProto> depotsVehicles = protosDb.All<VehicleDepotProto>();
             foreach (VehicleDepotProto machine in depotsVehicles)
@@ -1873,9 +1987,9 @@ namespace DataExtractorMod {
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -1919,6 +2033,7 @@ namespace DataExtractorMod {
                     Log.Info("###################################################");
                 }
             }
+            Log.Info("Completed Vehicle Depots");
 
             IEnumerable<FuelStationProto> depotsFuelds = protosDb.All<FuelStationProto>();
             foreach (FuelStationProto machine in depotsFuelds)
@@ -1947,9 +2062,9 @@ namespace DataExtractorMod {
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -1994,6 +2109,7 @@ namespace DataExtractorMod {
                     Log.Info("###################################################");
                 }
             }
+            Log.Info("Completed Fuel Stations");
 
             /*
              * -------------------------------------
@@ -2007,47 +2123,64 @@ namespace DataExtractorMod {
             List<string> fluidProdNames = new List<string> { };
             List<string> moltenProdNames = new List<string> { };
             List<string> virtualProdNames = new List<string> { };
-
-            IEnumerable<ProductProto> products = protosDb.All<ProductProto>();
-            foreach (ProductProto product in products)
+            try
             {
-                string type = null;
-                if (product is CountableProductProto)
+                IEnumerable<ProductProto> products = protosDb.All<ProductProto>();
+                foreach (ProductProto product in products)
                 {
-                    countProdNames.Add(product.Strings.Name.ToString());
-                    type = product.Type.ToString();
-                }
-                else if(product is LooseProductProto)
-                {
-                    looseProdNames.Add(product.Strings.Name.ToString());
-                    type = product.Type.ToString();
-                }
-                else if (product is FluidProductProto)
-                {
-                    fluidProdNames.Add(product.Strings.Name.ToString());
-                    type = product.Type.ToString();
-                }
-                else if (product is MoltenProductProto)
-                {
-                    moltenProdNames.Add(product.Strings.Name.ToString());
-                    type = product.Type.ToString();
-                }
-                else if (product is VirtualProductProto)
-                {
-                    virtualProdNames.Add(product.Strings.Name.ToString());
-                    type = product.Type.ToString();
-                }
-                if (type != null)
-                {
-                    productsJson.Add(MakeProductJsonObject(
-                        product.Id.ToString(),
-                        product.Strings.Name.ToString(),
-                        type,
-                        product.IconPath));
+
+                    string type = null;
+                    if (product is CountableProductProto)
+                    {
+                        countProdNames.Add(product.Strings.Name.ToString());
+                        type = product.Type.ToString();
+                    }
+                    else if (product is LooseProductProto)
+                    {
+                        looseProdNames.Add(product.Strings.Name.ToString());
+                        type = product.Type.ToString();
+                    }
+                    else if (product is FluidProductProto)
+                    {
+                        fluidProdNames.Add(product.Strings.Name.ToString());
+                        type = product.Type.ToString();
+                    }
+                    else if (product is MoltenProductProto)
+                    {
+                        moltenProdNames.Add(product.Strings.Name.ToString());
+                        type = product.Type.ToString();
+                    }
+                    else if (product is VirtualProductProto)
+                    {
+                        virtualProdNames.Add(product.Strings.Name.ToString());
+                        type = product.Type.ToString();
+
+                    }
+                    if (type != null)
+                    {
+                        var isSteam = product.Strings.Name.ToString().Contains("Steam");
+                        productsJson.Add(MakeProductJsonObject(
+                            product.Id.ToString(),
+                            product.Strings.Name.ToString(),
+                            type,
+                            product.IconPath,
+                            isSteam ? product.Graphics.TransportAccentColor : product.Graphics.TransportColor,
+                            product.QuantityFormatter.GetFormatInfo(product, 1)
+                           ));
+                    }
+
                 }
             }
+            catch (Exception ex)
+            {
+                Log.Info("###################################################");
+                Log.Info("ERROR Products");
+                Log.Info("###################################################");
+                Log.Error(ex.ToString());
+            }
+            Log.Info("Completed Products");
 
-            File.WriteAllText("c:/temp/products.json", $"{{\"game_version\":\"{game_version}\",\"products\":[{productsJson.JoinStrings(",")}]}}");
+            this.WriteOutput("products.json", $"{{\"game_version\":\"{game_version}\",\"products\":[{productsJson.JoinStrings(",")}]}}");
 
             List<string> storageItems = new List<string> { };
 
@@ -2079,9 +2212,9 @@ namespace DataExtractorMod {
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -2097,7 +2230,7 @@ namespace DataExtractorMod {
 
                     List<string> StorageInputs = new List<string> { };
 
-                    if ( machine.ProductType.Value.ToString() == "CountableProductProto")
+                    if (machine.ProductType.Value.ToString() == "CountableProductProto")
                     {
                         StorageInputs = countProdNames;
                     }
@@ -2214,9 +2347,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -2280,9 +2413,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -2346,9 +2479,9 @@ namespace DataExtractorMod {
                     string computing_consumed = "0";
                     string computing_generated = "0";
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -2412,9 +2545,9 @@ namespace DataExtractorMod {
                     string computing_consumed = "0";
                     string computing_generated = "0";
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -2478,9 +2611,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -2526,10 +2659,8 @@ namespace DataExtractorMod {
             IEnumerable<NuclearReactorProto> reactors = protosDb.All<NuclearReactorProto>();
             foreach (NuclearReactorProto machine in reactors)
             {
-
                 try
                 {
-
                     string id = machine.Id.ToString();
                     string name = machine.Strings.Name.ToString();
                     string category = "";
@@ -2550,13 +2681,12 @@ namespace DataExtractorMod {
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
-
                     foreach (ProductQuantity cost in machine.Costs.Price.Products)
                     {
                         string vehicleProductJson = MakeVehicleProductJsonObject(
@@ -2565,11 +2695,6 @@ namespace DataExtractorMod {
                         );
                         machinesProducts.Add(vehicleProductJson);
                     }
-
-                    //nuclear reactor gives all recipes at max power level
-                    //it also contain enrichment recipe, but all values are 0, so we should use fix all recipes here
-                    //we ignore provided recipes, and build our own for min and max power level
-                    //List<string> recipeItems = MakeRecipesJsonObject(protosDb, machine.Recipes.AsEnumerable(), id, name);
 
                     List<string> recipeItems = new List<string> { };
 
@@ -2581,24 +2706,66 @@ namespace DataExtractorMod {
 
                     //we keep recipe naming convention and order with prev version
                     int i = 0;
-                    int[] levels = new int[] { machine.MaxPowerLevel, 1 };
-                    foreach(int level in levels)
+                    // Just make recipes for the max level. A reactor running at x0.5 at level 4 is the same as a reactor running at x1.0 at level 2
+                    // And it's rare reactors aren't running with automatic management 
+                    var level = machine.MaxPowerLevel;
+                    foreach (var fuel in machine.FuelPairs)
                     {
-                        foreach (var fuel in machine.FuelPairs)
+                        var fuelPerDuration = (machine.MaxPowerLevel * recipeDurationAtMaxLevel.Seconds) / fuel.Duration.Seconds;
+
+                        // If a machine has enrichment (FBR), the recipes should include it, one for each enrichment level
+                        if (machine.Enrichment.HasValue)
                         {
-                            var fuelPerDuration = (machine.MaxPowerLevel * recipeDurationAtMaxLevel.Seconds) / fuel.Duration.Seconds;
+                            var enrichment = machine.Enrichment.Value;
+                            foreach (var step in enrichment.EnrichmentSteps)
+                            {
+                                i++;
+
+                                string recipe_id = (id + "Enrichment" + ((i != 0) ? i.ToString() : ""));
+                                string recipe_name = (name + " Enrichment " + step.BreedingRatio.ToString());
+
+                                string machineRecipeJson;
+
+                                List<string> inputItems = new List<string> { };
+                                List<string> outputItems = new List<string> { };
+
+                                machineRecipeJson = MakeRecipeIOJsonObject(machine.WaterInPerPowerLevel.Product.Strings.Name.ToString(), (waterInPerDuration / step.SteamReductionDiv).ToString());
+                                inputItems.Add(machineRecipeJson);
+                                machineRecipeJson = MakeRecipeIOJsonObject(machine.SteamOutPerPowerLevel.Product.Strings.Name.ToString(), (steamOutPerDuration / step.SteamReductionDiv).ToString());
+                                outputItems.Add(machineRecipeJson);
+
+                                machineRecipeJson = MakeRecipeIOJsonObject(fuel.FuelInProto.Strings.Name.ToString(), (step.FuelMultiplier.Apply(fuelPerDuration)).ToString());
+                                inputItems.Add(machineRecipeJson);
+                                machineRecipeJson = MakeRecipeIOJsonObject(fuel.SpentFuelOutProto.Strings.Name.ToString(), step.FuelMultiplier.Apply(fuelPerDuration).ToString());
+                                outputItems.Add(machineRecipeJson);
+
+                                var amount = (fuelPerDuration * step.BreedingRatio).ToStringRounded();
+                                machineRecipeJson = MakeRecipeIOJsonObject(enrichment.InputProduct.Strings.Name.ToString(), amount.ToString(), false);
+                                inputItems.Add(machineRecipeJson);
+                                machineRecipeJson = MakeRecipeIOJsonObject(enrichment.OutputProduct.Strings.Name.ToString(), amount.ToString(), true);
+                                outputItems.Add(machineRecipeJson);
+
+                                machineRecipeJson = MakeRecipeJsonObject(
+                                    recipe_id,
+                                    recipe_name,
+                                    "60",
+                                    inputItems.JoinStrings(","),
+                                    outputItems.JoinStrings(",")
+                                );
+
+                                recipeItems.Add(machineRecipeJson);
+                            }
+                        }
+                        else
+                        {
+                            i++;
 
                             string recipe_id = (id + ((i != 0) ? i.ToString() : ""));
                             string recipe_name = (name + ((i != 0) ? (" " + i.ToString()) : ""));
 
                             List<string> inputItems = new List<string> { };
                             List<string> outputItems = new List<string> { };
-
                             string machineRecipeJson;
-
-                            //each power level decreases duration
-                            //by default duration is specified at max power level
-                            var poverLevelMultiplier = (machine.MaxPowerLevel + 1 - level);
 
                             machineRecipeJson = MakeRecipeIOJsonObject(machine.WaterInPerPowerLevel.Product.Strings.Name.ToString(), waterInPerDuration.ToString());
                             inputItems.Add(machineRecipeJson);
@@ -2609,44 +2776,25 @@ namespace DataExtractorMod {
                             inputItems.Add(machineRecipeJson);
                             machineRecipeJson = MakeRecipeIOJsonObject(fuel.SpentFuelOutProto.Strings.Name.ToString(), fuelPerDuration.ToString());
                             outputItems.Add(machineRecipeJson);
-
                             machineRecipeJson = MakeRecipeJsonObject(
                                 recipe_id,
                                 recipe_name,
-                                (duration * poverLevelMultiplier).ToString(),
+                                duration.ToString(),
                                 inputItems.JoinStrings(","),
                                 outputItems.JoinStrings(",")
                             );
-
                             recipeItems.Add(machineRecipeJson);
-                            i++;
-
-                            //merge enrichment recipe, actually they are independent and could be executed both
-                            //because upkeep is not increaed, we should merge these
-                            if (machine.Enrichment.HasValue)
-                            {
-                                var enrichment = machine.Enrichment.Value;
-                                recipe_id = (id + ((i != 0) ? i.ToString() : ""));
-                                recipe_name = (name + ((i != 0) ? (" " + i.ToString()) : ""));
-
-                                machineRecipeJson = MakeRecipeIOJsonObject(enrichment.InputProduct.Strings.Name.ToString(), enrichment.ProcessedPerLevel.ToString());
-                                inputItems.Add(machineRecipeJson);
-                                machineRecipeJson = MakeRecipeIOJsonObject(enrichment.OutputProduct.Strings.Name.ToString(), enrichment.ProcessedPerLevel.ToString());
-                                outputItems.Add(machineRecipeJson);
-
-                                machineRecipeJson = MakeRecipeJsonObject(
-                                    recipe_id,
-                                    recipe_name,
-                                    (60 / level).ToString(),
-                                    inputItems.JoinStrings(","),
-                                    outputItems.JoinStrings(",")
-                                );
-
-                                recipeItems.Add(machineRecipeJson);
-                                i++;
-                            }
                         }
                     }
+
+                    MachineCoolant machineCoolant = new MachineCoolant
+                    {
+                        optional = true,
+                        productIn = machine.CoolantIn,
+                        productOut = machine.CoolantOut,
+                        quantityIn = 30, // Not sure these are in the data anywhere
+                        quantityOut = 30
+                    };
 
                     string machineJson = MakeMachineJsonObject2(
                         id,
@@ -2666,7 +2814,8 @@ namespace DataExtractorMod {
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipeItems.JoinStrings(",")
+                        recipeItems.JoinStrings(","),
+                        machineCoolant
                     );
                     machineItems.Add(machineJson);
 
@@ -2703,9 +2852,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -2769,9 +2918,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -2835,15 +2984,17 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
                     string next_tier = "";
+                    Log.Info("WasteSortingPlant Gathered basics");
                     if (machine.Upgrade.NextTier.HasValue)
                     {
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
+                    Log.Info("WasteSortingPlant Gathered categories");
 
                     List<string> machinesProducts = new List<string> { };
 
@@ -2855,9 +3006,13 @@ namespace DataExtractorMod {
                         );
                         machinesProducts.Add(vehicleProductJson);
                     }
-
-                    List<string> recipeItems = MakeRecipesJsonObject(protosDb, machine.Recipes.AsEnumerable(), id, name);
-
+                    Log.Info("WasteSortingPlant Gathered products");
+                    List<string> recipeItems = new List<string> { };
+                    if (machine.Recipes != null)
+                    {
+                        recipeItems = MakeRecipesJsonObject(protosDb, machine.Recipes.AsEnumerable(), id, name);
+                    }
+                    Log.Info("WasteSortingPlant Gathered recipes");
                     string machineJson = MakeMachineJsonObject2(
                         id,
                         name,
@@ -2879,14 +3034,16 @@ namespace DataExtractorMod {
                         recipeItems.JoinStrings(",")
                     );
                     machineItems.Add(machineJson);
-
+                    Log.Info("WasteSortingPlant Created Json");
                     DumpObject(DUMP, id, machine);
                 }
-                catch
+                catch (Exception e)
                 {
                     Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
+                    Log.Info("ERROR WasteSortingPlant " + machine.Id.ToString());
                     Log.Info("###################################################");
+                    Log.Error(e.ToString());
+                    Log.Error("LineNum:" + (new StackTrace(e, true).GetFrame(0).GetFileLineNumber().ToString()));
                 }
             }
 
@@ -2911,9 +3068,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -2963,7 +3120,7 @@ namespace DataExtractorMod {
                 catch
                 {
                     Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
+                    Log.Info("ERROR Depot " + machine.Id.ToString());
                     Log.Info("###################################################");
                 }
             }
@@ -2990,9 +3147,9 @@ namespace DataExtractorMod {
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (ToolbarCategoryProto cat in machine.Graphics.Categories)
+                    foreach (var cat in machine.Graphics.Categories)
                     {
-                        category = cat.Strings.Name.ToString();
+                        category = cat.CategoryProto.Strings.Name.ToString();
                     }
 
                     List<string> machinesProducts = new List<string> { };
@@ -3068,7 +3225,7 @@ namespace DataExtractorMod {
                 catch
                 {
                     Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
+                    Log.Info("ERROR Depot " + machine.Id.ToString());
                     Log.Info("###################################################");
                 }
             }
@@ -3182,7 +3339,7 @@ namespace DataExtractorMod {
 
             }
 
-            File.WriteAllText("c:/temp/terrain_materials.json", $"{{\"game_version\":\"{game_version}\",\"terrain_materials\":[{materialItems.JoinStrings(",")}]}}");
+            this.WriteOutput("terrain_materials.json", $"{{\"game_version\":\"{game_version}\",\"terrain_materials\":[{materialItems.JoinStrings(",")}]}}");
 
             List<string> contractItems = new List<string> { };
 
@@ -3206,7 +3363,7 @@ namespace DataExtractorMod {
 
             }
 
-            File.WriteAllText("c:/temp/contracts.json", $"{{\"game_version\":\"{game_version}\",\"contracts\":[{contractItems.JoinStrings(",")}]}}");
+            this.WriteOutput("contracts.json", $"{{\"game_version\":\"{game_version}\",\"contracts\":[{contractItems.JoinStrings(",")}]}}");
 
             /*
                 * -------------------------------------
@@ -3251,10 +3408,10 @@ namespace DataExtractorMod {
                     machinesProducts.JoinStrings(",")
                 );
                 transportItems.Add(transportsJson);
-
+                this.sprites.Add(transport.Id.ToString(), new spriteToExport() { category = category, icon = transport.IconPath });
             }
 
-            File.WriteAllText("c:/temp/transports.json", $"{{\"game_version\":\"{game_version}\",\"transports\":[{transportItems.JoinStrings(",")}]}}");
+            this.WriteOutput("transports.json", $"{{\"game_version\":\"{game_version}\",\"transports\":[{transportItems.JoinStrings(",")}]}}");
 
             /*
                 * -------------------------------------
@@ -3262,8 +3419,8 @@ namespace DataExtractorMod {
                 * -------------------------------------
             */
 
-            File.WriteAllText("c:/temp/machines_and_buildings.json", $"{{\"game_version\":\"{game_version}\",\"machines_and_buildings\":[{machineItems.JoinStrings(",")}]}}");
-            File.WriteAllText("c:/temp/storages.json", $"{{\"game_version\":\"{game_version}\",\"storages\":[{storageItems.JoinStrings(",")}]}}");
+            this.WriteOutput("machines_and_buildings.json", $"{{\"game_version\":\"{game_version}\",\"machines_and_buildings\":[{machineItems.JoinStrings(",")}]}}");
+            this.WriteOutput("storages.json", $"{{\"game_version\":\"{game_version}\",\"storages\":[{storageItems.JoinStrings(",")}]}}");
 
             /*
                 * -------------------------------------
@@ -3271,10 +3428,9 @@ namespace DataExtractorMod {
                 * Then use UnityEngine.ImageConversionModule.ImageConversion to convert texture to png, and export it to file.
                 * -------------------------------------
             */
-
-            if(DUMP.Count != 0)
+            if (DUMP.Count != 0)
             {
-                File.WriteAllLines("c:/temp/dump.txt", DUMP);
+                this.WriteOutput("dump.txt", DUMP.JoinStrings());
             }
         }
 
@@ -3284,41 +3440,12 @@ namespace DataExtractorMod {
          * -------------------------------------
         */
 
-        public void RegisterPrototypes(ProtoRegistrator registrator) { }
 
-/*        public void Main(string[] args)
+        public void Register(ImmutableArray<DataOnlyMod> mods, RegistrationContext context)
         {
-            var websocketServer = new WebSocketServer("ws://0.0.0.0:8181");
-            websocketServer.Start(connection =>
-            {
-                connection.OnOpen = () =>
-                  Console.WriteLine("OnOpen");
-                connection.OnClose = () =>
-                  Console.WriteLine("OnClose");
-                connection.OnMessage = message =>
-                {
-                    Console.WriteLine($"OnMessage {message}");
-                    connection.Send($"Echo: {message}");
-                };
-                connection.OnBinary = bytes =>
-                  Console.WriteLine($"OnBinary {Encoding.UTF8.GetString(bytes)}");
-                connection.OnError = exception =>
-                  Console.WriteLine($"OnError {exception.Message}");
-                connection.OnPing = bytes =>
-                  Console.WriteLine("OnPing");
-                connection.OnPong = bytes =>
-                  Console.WriteLine("OnPong");
-            });
-        }*/
 
-        public void Initialize(DependencyResolver resolver, bool gameWasLoaded) {
-            
         }
 
-        public void Register(ImmutableArray<DataOnlyMod> mods, RegistrationContext context) {}
 
-        public void EarlyInit(DependencyResolver resolver)
-        {
-        }
     }
 }
