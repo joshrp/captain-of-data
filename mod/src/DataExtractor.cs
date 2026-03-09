@@ -133,6 +133,13 @@ using Mafi.Core.Localization.Quantity;
 using Mafi.Unity;
 using System;
 using System.Diagnostics;
+using UnityEngine;
+using Mafi.Core.Economy;
+using Mafi.Collections;
+using Mafi.Core.Research;
+using Mafi.Core.UnlockingTree;
+using Mafi.Base.Prototypes.Research;
+using RTG;
 
 namespace DataExtractorMod
 {
@@ -155,13 +162,12 @@ namespace DataExtractorMod
         public static readonly bool DEBUG = true;
         public struct spriteToExport { public string category; public string icon; };
         public Dictionary<string, spriteToExport> sprites = new Dictionary<string, spriteToExport>();
-        public DataExtractor()
+        public DataExtractor(CoreMod coreMod, BaseMod baseMod)
         {
             //AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
-            Log.Info(MOD_ROOT_DIR_PATH);
-            Log.Info(MOD_DIR_PATH);
-            Log.Info(PLUGIN_DIR_PATH);
-            Log.Info("Loaded Data Extractor Mod By ItsDesm");
+            Log.Info("Loaded Data Extractor Mod");
+            Log.Info("Loaded core mod " + coreMod.Name);
+            Log.Info("loaded base mod " + baseMod.Name);
         }
 
         public void EarlyInit(DependencyResolver resolver)
@@ -252,7 +258,8 @@ namespace DataExtractorMod
             string research_speed,
             string icon,
             string build_costs,
-            string recipes
+            string recipes,
+            RelTile3i footprint
         )
         {
             return MakeMachineJsonObject2(
@@ -273,7 +280,8 @@ namespace DataExtractorMod
                 research_speed,
                 icon,
                 build_costs,
-                recipes
+                recipes,
+                footprint
             );
         }
 
@@ -305,6 +313,7 @@ namespace DataExtractorMod
             string icon,
             string build_costs,
             string recipes,
+            RelTile3i footprint,
             MachineCoolant? coolant = null
         )
         {
@@ -339,6 +348,8 @@ namespace DataExtractorMod
                 props.Add($"\"quantity_out\":{c.quantityOut}");
                 props.Add($"\"optional\":{c.optional.ToString().ToLower()} }}");
             }
+            if (footprint.X > 0 || footprint.Y > 0)
+                props.Add($"\"footprint\":[{footprint.X},{footprint.Y}]");
 
             obj.AppendLine("{");
             obj.AppendLine(props.JoinStrings(","));
@@ -801,24 +812,17 @@ namespace DataExtractorMod
             DUMP.Add("");
         }
 
-        /*
-         * -------------------------------------
-         * Main Mod Code
-         * -------------------------------------
-         * The logic runs within the RegisterDepencies stage due to me not being able to get the code running correctly otherwise.
-         * This feels like it might not be the right place for it, but it works so...
-        */
-        public void RegisterDependencies(DependencyResolverBuilder depBuilder, ProtosDb protosDb, bool gameWasLoaded)
-        {
-        }
         public void RegisterPrototypes(ProtoRegistrator registrator)
         {
 
             ProtosDb protosDb = registrator.PrototypesDb;
 
+            SourceProductsAnalyzer sourceProdAnal = new SourceProductsAnalyzer(protosDb);
+
             List<string> DUMP = new List<string> { };
 
             string game_version = typeof(Mafi.Base.BaseMod).GetTypeInfo().Assembly.GetName().Version.ToString();
+
 
             /*
              * -------------------------------------
@@ -1149,7 +1153,8 @@ namespace DataExtractorMod
                         research_speed,
                         generator.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipeItems.JoinStrings(",")
+                        recipeItems.JoinStrings(","),
+                        generator.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -1224,7 +1229,8 @@ namespace DataExtractorMod
                         research_speed,
                         generator.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipeItems.JoinStrings(",")
+                        recipeItems.JoinStrings(","),
+                        generator.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -1294,7 +1300,8 @@ namespace DataExtractorMod
                         research_speed,
                         generator.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        generator.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -1367,7 +1374,8 @@ namespace DataExtractorMod
                         research_speed,
                         generator.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipeItems.JoinStrings(",")
+                        recipeItems.JoinStrings(","),
+                        generator.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -1454,7 +1462,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipeItems.JoinStrings(",")
+                        recipeItems.JoinStrings(","),
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -1605,7 +1614,8 @@ namespace DataExtractorMod
                         research_speed,
                         item.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipeItems.JoinStrings(",")
+                        recipeItems.JoinStrings(","),
+                        item.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -1713,7 +1723,8 @@ namespace DataExtractorMod
                         research_speed,
                         item.IconPath,
                         machinesProducts.JoinStrings(","),
-                        machineRecipeJson
+                        machineRecipeJson,
+                        item.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -1788,7 +1799,8 @@ namespace DataExtractorMod
                         research_speed,
                         item.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        item.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -1863,7 +1875,8 @@ namespace DataExtractorMod
                         research_speed,
                         item.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        item.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -1907,9 +1920,33 @@ namespace DataExtractorMod
 
                     if (item.Id.ToString() != "ResearchLab1")
                     {
-
+                        Log.Info($"Processing {item.Id.ToString()}");
                         List<string> recipeItems = MakeRecipesJsonObject(protosDb, item.Recipes.AsEnumerable(), id, name);
                         recipes = recipeItems.JoinStrings(",");
+                        foreach (var rec in item.Recipes)
+                        {
+                            Log.Info($"  Checking recipe {rec.ToString()}");
+                            foreach (var outp in rec.AllUserVisibleOutputs)
+                            {
+                                var firstInput = rec.AllUserVisibleInputs[0];
+                                Log.Info($"  Checking {outp.Product.Strings.Name.ToString()}");
+                                if (outp.Product.Id.ToString() == "Product_Recyclables")
+                                {
+
+                                    firstInput.Product.TryGetParam<ApplyRecyclingRatioOnSourcesParam>(out var recParamInput);
+                                    Log.Info($" Recyclable Product: {firstInput.Product.Strings.Name.ToString()}: {firstInput.Quantity.Value.ToString()} is Recyclable: {firstInput.Product.IsRecyclable} with ratios? {recParamInput.ToStringSafe()}");
+
+                                    var result = new Lyst<ProductQuantity>();
+                                    sourceProdAnal.GetSourceProductsFor(firstInput.Product, new Quantity(10000), result, true);
+
+                                    foreach (var res in result)
+                                    {
+                                        res.Product.TryGetParam<ApplyRecyclingRatioOnSourcesParam>(out var recParam);
+                                        Log.Info($" Source Product: {res.Product.Strings.Name.ToString()} qty: {res.Quantity.ToString()} is Recyclable: {res.Product.IsRecyclable} with ratios? {recParam.ToStringSafe()}");
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     foreach (var cat in item.Graphics.Categories)
@@ -1946,7 +1983,8 @@ namespace DataExtractorMod
                         research_speed.ToString(),
                         item.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipes
+                        recipes,
+                        item.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -2021,7 +2059,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -2096,7 +2135,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
 
                     machineItems.Add(machineJson);
@@ -2291,7 +2331,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -2313,7 +2354,9 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipeItems.JoinStrings(",")
+                        recipeItems.JoinStrings(","),
+                        machine.Layout.LayoutSize
+
                     );
                     storageItems.Add(storageJson);
 
@@ -2379,7 +2422,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -2445,7 +2489,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -2511,7 +2556,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -2577,7 +2623,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -2643,7 +2690,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -2815,6 +2863,7 @@ namespace DataExtractorMod
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
                         recipeItems.JoinStrings(","),
+                        machine.Layout.LayoutSize,
                         machineCoolant
                     );
                     machineItems.Add(machineJson);
@@ -2884,7 +2933,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -2950,7 +3000,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -3031,7 +3082,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipeItems.JoinStrings(",")
+                        recipeItems.JoinStrings(","),
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
                     Log.Info("WasteSortingPlant Created Json");
@@ -3111,7 +3163,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        machineRecipeJson
+                        machineRecipeJson,
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -3217,7 +3270,8 @@ namespace DataExtractorMod
                         research_speed,
                         machine.IconPath,
                         machinesProducts.JoinStrings(","),
-                        recipeItems.JoinStrings(",")
+                        recipeItems.JoinStrings(","),
+                        machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
@@ -3274,7 +3328,8 @@ namespace DataExtractorMod
                         research_speed,
                         "",
                         machinesProducts.JoinStrings(","),
-                        ""
+                        "",
+                        new RelTile3i(0, 0, 0)
                     );
                     machineItems.Add(machineJson);
 
@@ -3446,6 +3501,156 @@ namespace DataExtractorMod
 
         }
 
+        public struct techCosts {
+            public Dict<RecipeProto.ID, long> recipes;
+            public Dict<ProductProto.ID, long> products;
+        }
 
+        public techCosts WalkResearchCosts(IEnumerable<ResearchNodeProto> allTechs)
+        {
+            Dict<RecipeProto.ID, long> recipeResearchCost = new Dict<RecipeProto.ID, long>();
+            Dict<ProductProto.ID, long> productResearchCost = new Dict<ProductProto.ID, long>();
+
+            var techCost = new Dict<ResearchNodeProto.ID, long>();
+
+            var toVisit = new Queue<ResearchNodeProto>();
+
+            var childrenOfNode = new Dict<ResearchNodeProto.ID, List<ResearchNodeProto>>();
+            /**
+             * For every tech in the tech tree, find ones without parents. 
+             * Walk those roots and store the research cost for that node (sum all parents costs)
+             * Store the current research cost for any product or recipe that tech unlocks
+             */
+            try
+            {
+                if (allTechs == null)
+                    throw new Exception("allTechs is null");
+                foreach (var tech in allTechs)
+                {
+                    if (!childrenOfNode.ContainsKey(tech.Id))
+                        childrenOfNode.Add(tech.Id, new List<ResearchNodeProto>());
+                    
+                    if (tech.Parents.IsEmpty)
+                    {
+                        toVisit.Enqueue(tech);
+                        Log.Info("Found root tech " + tech.Id.ToString());
+                    }
+                    else
+                    {
+                        foreach (var parent in tech.Parents)
+                        {
+                            if (parent == null) continue;
+                            if (!childrenOfNode.ContainsKey(parent.Id))
+                                childrenOfNode.Add(parent.Id, new List<ResearchNodeProto>());
+                            childrenOfNode[parent.Id].Add(tech);
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                throw new Exception("Error building research tree", e);
+            }
+
+            long getCost(ResearchNodeProto.ID id)
+            {
+                try
+                {
+                    var prop = typeof(ResearchCosts).GetProperty(id.ToString());
+                    if (prop == null)
+                        throw new Exception("No research cost property for " + id.ToString());
+                    foreach (var p in typeof(ResearchCosts).GetProperties())
+                    {
+                        Log.Info("Property " + p.Name);
+                        if (p.Name == id.ToString())
+                        {
+                            prop = p;
+                            break;
+                        }
+                    }
+                    object val = prop.GetValue(null, null);
+                    if (val is int)
+                        return (long)val;
+                    else
+                        if (val is long) return (long)val;
+                    else
+                        throw new Exception("Unknown research cost type for " + id.ToString());
+                }
+                catch (Exception e)
+                {
+                    throw new Exception("Error getting research cost for " + id.ToString(), e);
+                }
+            }
+
+            try
+            {
+                while (toVisit.Count > 0)
+                {
+                    var current = toVisit.Dequeue();
+
+                    long currentCost = getCost(current.Id);
+                    bool incomplete = false;
+                    foreach (var parent in current.Parents)
+                    {
+                        if (techCost.ContainsKey(parent.Id))
+                            currentCost += techCost[parent.Id];
+                        else
+                            incomplete = true;
+                    }
+                    Log.Info("Total cost for tech " + current.Id.ToString() + " is " + currentCost.ToString() + " from " + current.Parents.Length.ToString() + " parents, incomplete=" + incomplete.ToString());
+                    if (incomplete)
+                        continue; // we're missing a parent cost, we'll pick it up later
+
+                    techCost[current.Id] = currentCost;
+
+                    foreach (var item in current.Units)
+                    {
+                        if (item is ProtoUnlock protoUnlock)
+                        {
+                            IEnumerable<IProto> items = protoUnlock.UnlockedProtos.Where((IProto x) => !(x is RecipeProto) && !(x is ProductProto));
+                            // unlockedList.AddRange(items);
+                            foreach (var unlocked in items)
+                            {
+                                if (unlocked is RecipeProto recipe)
+                                {
+                                    if (recipeResearchCost.ContainsKey(recipe.Id))
+                                        throw new Exception("Recipe " + recipe.Id.ToString() + " unlocked by multiple techs, can't assign unique research cost");
+                                    recipeResearchCost[recipe.Id] = currentCost;
+                                }
+                                else if (unlocked is ProductProto product)
+                                {
+                                    if (productResearchCost.ContainsKey(product.Id))
+                                        throw new Exception("Product " + product.Id.ToString() + " unlocked by multiple techs, can't assign unique research cost");
+
+                                    productResearchCost[product.Id] = currentCost;
+                                }
+                            }
+                        }
+                    }
+                    foreach (var child in childrenOfNode[current.Id])
+                        toVisit.Enqueue(child);
+                }
+            }
+            catch (Exception e)
+            {
+                throw new Exception("Error walking research tree", e);
+            }
+
+            return new techCosts
+            {
+                recipes = recipeResearchCost,
+                products = productResearchCost
+
+            };
+        }
+        public void RegisterDependencies(DependencyResolverBuilder depBuilder, ProtosDb protosDb, bool gameWasLoaded)
+        {
+            Log.Info("Data Extractor Mod RegisterDependencies");
+
+            // Research nodes aren't linked together until the Map loads so we run this part here
+            var allTechs = WalkResearchCosts(protosDb.All<ResearchNodeProto>());
+
+
+        }
     }
 }
