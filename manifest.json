@@ -1,0 +1,17 @@
+{
+  "id": "DataExtractor",
+  "version": "1.0.0",
+  "authors": [
+    "Joshrp",
+    "https://github.com/doubleaxe",
+    "https://github.com/David-Melo"
+  ],
+  "display_name": "DataExtractor",
+  "description": "Data Extractor to JSON files",
+  "min_game_version": "0.8",
+  "primary_dlls": [
+    "DataExtractor.dll"
+  ],
+  "non_locking_dll_load": true,
+  "can_add_to_saved_game": true
+}

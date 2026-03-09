@@ -108,6 +108,6 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>
-copy "$(TargetDir)$(TargetName).*" "$(TargetPath)\..\..\..\..\"</PostBuildEvent>
+copy "$(TargetDir)$(TargetName).*" "$(TargetPath)\..\..\..\..\..\..\DataExtractor\"</PostBuildEvent>
   </PropertyGroup>
 </Project>
