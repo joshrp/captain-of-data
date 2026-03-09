@@ -714,7 +714,7 @@ namespace DataExtractorMod
             String stage = "Begin";
             try
             {
-                var duration = (recipe.Duration / 10);
+                var duration = (recipe.Duration.Ticks / 10.0f);
                 var inputs = recipe.AllUserVisibleInputs;
                 var outputs = recipe.AllUserVisibleOutputs;
 
@@ -728,7 +728,7 @@ namespace DataExtractorMod
                 {
                     recipe_name = defaultName;
                 }
-                string recipe_duration = duration.ToString();
+                string recipe_duration = duration <= 0.1f ? "0" : duration.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
                 float power_mult = Percent.Hundred.ToFloat();
                 stage = "Before PowerMultiplier";
                 if (recipe is RecipeProto)
@@ -3501,7 +3501,8 @@ namespace DataExtractorMod
 
         }
 
-        public struct techCosts {
+        public struct techCosts
+        {
             public Dict<RecipeProto.ID, long> recipes;
             public Dict<ProductProto.ID, long> products;
         }
@@ -3529,7 +3530,7 @@ namespace DataExtractorMod
                 {
                     if (!childrenOfNode.ContainsKey(tech.Id))
                         childrenOfNode.Add(tech.Id, new List<ResearchNodeProto>());
-                    
+
                     if (tech.Parents.IsEmpty)
                     {
                         toVisit.Enqueue(tech);
