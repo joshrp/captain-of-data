@@ -138,6 +138,7 @@ using Mafi.Collections;
 using Mafi.Core.Research;
 using Mafi.Core.UnlockingTree;
 using Mafi.Base.Prototypes.Research;
+using Mafi.Base.Prototypes.Buildings.ThermalStorages;
 
 namespace DataExtractorMod
 {
@@ -193,25 +194,64 @@ namespace DataExtractorMod
             //}
         }
 
-        private void WriteOutput(string fileName, string content)
+        private void EnsureOutputDir()
         {
             if (!Directory.Exists(MOD_OUTPUT_PATH))
-            {
                 Directory.CreateDirectory(MOD_OUTPUT_PATH);
-            }
+        }
+
+        private void WriteOutput(string fileName, string content)
+        {
+            EnsureOutputDir();
             string filePath = Path.Combine(MOD_OUTPUT_PATH, fileName);
             File.WriteAllText(filePath, content);
             Log.Info($"Wrote {fileName} to {MOD_OUTPUT_PATH}");
         }
+
         public void WriteFile(string fileName, byte[] bytes)
         {
-            if (!Directory.Exists(MOD_OUTPUT_PATH))
-            {
-                Directory.CreateDirectory(MOD_OUTPUT_PATH);
-            }
+            EnsureOutputDir();
             string filePath = Path.Combine(MOD_OUTPUT_PATH, fileName);
             File.WriteAllBytes(filePath, bytes);
             Log.Info($"Wrote {fileName} to {MOD_OUTPUT_PATH}");
+        }
+
+        private static void LogError(string context, Exception ex = null)
+        {
+            Log.Info("###################################################");
+            Log.Info("ERROR " + context);
+            Log.Info("###################################################");
+            if (ex != null) Log.Error(ex.ToString());
+        }
+
+        /*
+         * -------------------------------------
+         * JSON Helper Methods
+         * -------------------------------------
+        */
+
+        /// <summary>Wraps a list of pre-formatted "key":value strings into a JSON object.</summary>
+        private static string WrapJsonObject(List<string> props)
+        {
+            var obj = new System.Text.StringBuilder();
+            obj.AppendLine("{");
+            obj.AppendLine(props.JoinStrings(","));
+            obj.AppendLine("}");
+            return obj.ToString();
+        }
+
+        /// <summary>Formats a collection of ProductQuantity into a comma-separated JSON string of {product, quantity} objects.</summary>
+        private static string FormatProductCosts(SmallImmutableArray<ProductQuantity> products)
+        {
+            var items = new List<string>();
+            foreach (ProductQuantity cost in products)
+            {
+                items.Add(MakeVehicleProductJsonObject(
+                    cost.Product.Strings.Name.ToString(),
+                    cost.Quantity.ToString()
+                ));
+            }
+            return items.JoinStrings(",");
         }
 
         /*
@@ -227,65 +267,14 @@ namespace DataExtractorMod
             bool optional = false
         )
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"quantity\":{quantity}");
-            if (optional)
+            var props = new List<string>
             {
+                $"\"name\":\"{name}\"",
+                $"\"quantity\":{quantity}"
+            };
+            if (optional)
                 props.Add($"\"optional\":true");
-            }
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-
-            return obj.ToString();
-        }
-
-        public static string MakeMachineJsonObject(
-            string id,
-            string name,
-            string category,
-            string workers,
-            string maintenance_cost_units,
-            string maintenance_cost_quantity,
-            string electricity_consumed,
-            string electricity_generated,
-            string computing_consumed,
-            string computing_generated,
-            string capacity,
-            string unity_cost,
-            string research_speed,
-            string icon,
-            string build_costs,
-            string recipes,
-            RelTile3i footprint
-        )
-        {
-            return MakeMachineJsonObject2(
-                id,
-                name,
-                category,
-                "",
-                workers,
-                maintenance_cost_units,
-                maintenance_cost_quantity,
-                electricity_consumed,
-                electricity_generated,
-                computing_consumed,
-                computing_generated,
-                "",
-                capacity,
-                unity_cost,
-                research_speed,
-                icon,
-                build_costs,
-                recipes,
-                footprint
-            );
+            return WrapJsonObject(props);
         }
 
         public struct MachineCoolant
@@ -297,7 +286,7 @@ namespace DataExtractorMod
             public bool optional;
         }
 
-        public static string MakeMachineJsonObject2(
+        public static string MakeMachineJsonObject(
             string id,
             string name,
             string category,
@@ -320,391 +309,264 @@ namespace DataExtractorMod
             MachineCoolant? coolant = null
         )
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-            props.Add($"\"id\":\"{id}\"");
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"category\":\"{category}\"");
-            props.Add($"\"next_tier\":\"{next_tier}\"");
-            props.Add($"\"workers\":{workers}");
-            props.Add($"\"maintenance_cost_units\":\"{maintenance_cost_units}\"");
-            props.Add($"\"maintenance_cost_quantity\":{maintenance_cost_quantity}");
-            props.Add($"\"electricity_consumed\":{electricity_consumed}");
-            props.Add($"\"electricity_generated\":{electricity_generated}");
-            props.Add($"\"computing_consumed\":{computing_consumed}");
-            props.Add($"\"computing_generated\":{computing_generated}");
-            props.Add($"\"product_type\":\"{product_type}\"");
-            props.Add($"\"storage_capacity\":{capacity}");
-            props.Add($"\"unity_cost\":{unity_cost}");
-            props.Add($"\"research_speed\":{research_speed}");
-            props.Add($"\"icon_path\":\"{icon}\"");
-            props.Add($"\"build_costs\":[{build_costs}]");
-            props.Add($"\"recipes\":[{recipes}]");
+            var props = new List<string>
+            {
+                $"\"id\":\"{id}\"",
+                $"\"name\":\"{name}\"",
+                $"\"category\":\"{category}\"",
+                $"\"next_tier\":\"{next_tier}\"",
+                $"\"workers\":{workers}",
+                $"\"maintenance_cost_units\":\"{maintenance_cost_units}\"",
+                $"\"maintenance_cost_quantity\":{maintenance_cost_quantity}",
+                $"\"electricity_consumed\":{electricity_consumed}",
+                $"\"electricity_generated\":{electricity_generated}",
+                $"\"computing_consumed\":{computing_consumed}",
+                $"\"computing_generated\":{computing_generated}",
+                $"\"product_type\":\"{product_type}\"",
+                $"\"storage_capacity\":{capacity}",
+                $"\"unity_cost\":{unity_cost}",
+                $"\"research_speed\":{research_speed}",
+                $"\"icon_path\":\"{icon}\"",
+                $"\"build_costs\":[{build_costs}]",
+                $"\"recipes\":[{recipes}]"
+            };
 
             if (coolant.HasValue)
             {
                 MachineCoolant c = coolant.Value;
-                props.Add($"\"coolant\":{{\"product_in\":\"{c.productIn.Strings.Name.ToString()}\"");
-                props.Add($"\"product_out\":\"{c.productOut.Strings.Name.ToString()}\"");
-                props.Add($"\"quantity_in\":{c.quantityIn}");
-                props.Add($"\"quantity_out\":{c.quantityOut}");
-                props.Add($"\"optional\":{c.optional.ToString().ToLower()} }}");
+                props.Add($"\"coolant\":{{\"product_in\":\"{c.productIn.Strings.Name.ToString()}\"," +
+                    $"\"product_out\":\"{c.productOut.Strings.Name.ToString()}\"," +
+                    $"\"quantity_in\":{c.quantityIn}," +
+                    $"\"quantity_out\":{c.quantityOut}," +
+                    $"\"optional\":{c.optional.ToString().ToLower()} }}");
             }
             if (footprint.X > 0 || footprint.Y > 0)
                 props.Add($"\"footprint\":[{footprint.X},{footprint.Y}]");
 
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(props);
+        }
+
+        /// <summary>Overload without next_tier and product_type (defaults to "").</summary>
+        public static string MakeMachineJsonObject(
+            string id, string name, string category,
+            string workers, string maintenance_cost_units, string maintenance_cost_quantity,
+            string electricity_consumed, string electricity_generated,
+            string computing_consumed, string computing_generated,
+            string capacity, string unity_cost, string research_speed,
+            string icon, string build_costs, string recipes,
+            RelTile3i footprint
+        )
+        {
+            return MakeMachineJsonObject(id, name, category, "", workers,
+                maintenance_cost_units, maintenance_cost_quantity,
+                electricity_consumed, electricity_generated,
+                computing_consumed, computing_generated, "",
+                capacity, unity_cost, research_speed,
+                icon, build_costs, recipes, footprint);
         }
 
         public static string MakeTransportJsonObject(
-            string id,
-            string name,
-            string category,
-            string next_tier,
-            string maintenance_cost_units,
-            string maintenance_cost_quantity,
-            string electricity_consumed,
-            string throughput_per_second,
-            string length_per_cost,
-            string icon,
-            string build_costs
+            string id, string name, string category, string next_tier,
+            string maintenance_cost_units, string maintenance_cost_quantity,
+            string electricity_consumed, string throughput_per_second,
+            string length_per_cost, string icon, string build_costs
         )
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"id\":\"{id}\"");
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"category\":\"{category}\"");
-            props.Add($"\"next_tier\":\"{next_tier}\"");
-            props.Add($"\"maintenance_cost_units\":\"{maintenance_cost_units}\"");
-            props.Add($"\"maintenance_cost_quantity\":{maintenance_cost_quantity}");
-            props.Add($"\"electricity_consumed\":{electricity_consumed}");
-            props.Add($"\"throughput_per_second\":{throughput_per_second}");
-            props.Add($"\"length_per_cost\":{length_per_cost}");
-            props.Add($"\"icon_path\":\"{icon}\"");
-            props.Add($"\"build_costs\":[{build_costs}]");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"id\":\"{id}\"",
+                $"\"name\":\"{name}\"",
+                $"\"category\":\"{category}\"",
+                $"\"next_tier\":\"{next_tier}\"",
+                $"\"maintenance_cost_units\":\"{maintenance_cost_units}\"",
+                $"\"maintenance_cost_quantity\":{maintenance_cost_quantity}",
+                $"\"electricity_consumed\":{electricity_consumed}",
+                $"\"throughput_per_second\":{throughput_per_second}",
+                $"\"length_per_cost\":{length_per_cost}",
+                $"\"icon_path\":\"{icon}\"",
+                $"\"build_costs\":[{build_costs}]"
+            });
         }
 
         public static string MakeRecipeJsonObject(
-            string id,
-            string name,
-            string duration,
-            string inputs,
-            string outputs,
-            float power_multiplier = 1.0f
+            string id, string name, string duration,
+            string inputs, string outputs, float power_multiplier = 1.0f
         )
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"id\":\"{id}\"");
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"duration\":{duration}");
-            props.Add($"\"power_multiplier\":{power_multiplier.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}");
-            props.Add($"\"inputs\":[{inputs}]");
-            props.Add($"\"outputs\":[{outputs}]");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"id\":\"{id}\"",
+                $"\"name\":\"{name}\"",
+                $"\"duration\":{duration}",
+                $"\"power_multiplier\":{power_multiplier.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}",
+                $"\"inputs\":[{inputs}]",
+                $"\"outputs\":[{outputs}]"
+            });
         }
 
-        public static string MakeVehicleJsonObject(
-            string name,
-            string costs
-        )
+        public static string MakeVehicleJsonObject(string name, string costs)
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"costs\":[{costs}]");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"name\":\"{name}\"",
+                $"\"costs\":[{costs}]"
+            });
         }
 
-        public static string MakeVehicleProductJsonObject(
-            string product,
-            string quantity
-        )
+        public static string MakeVehicleProductJsonObject(string product, string quantity)
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"product\":\"{product}\"");
-            props.Add($"\"quantity\":{quantity}");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"product\":\"{product}\"",
+                $"\"quantity\":{quantity}"
+            });
         }
 
-        public static string MakeEngineJsonObject(
-            string name,
-            string capacity,
-            string crew,
-            string costs
-        )
+        public static string MakeEngineJsonObject(string name, string capacity, string crew, string costs)
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"fuel_capacity\":{capacity}");
-            props.Add($"\"extra_crew_needed\":{crew}");
-            props.Add($"\"costs\":[{costs}]");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"name\":\"{name}\"",
+                $"\"fuel_capacity\":{capacity}",
+                $"\"extra_crew_needed\":{crew}",
+                $"\"costs\":[{costs}]"
+            });
         }
 
-        public static string MakeGunJsonObject(
-            string name,
-            string range,
-            string damage,
-            string crew,
-            string costs
-        )
+        public static string MakeGunJsonObject(string name, string range, string damage, string crew, string costs)
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"range\":{range}");
-            props.Add($"\"damage\":{damage}");
-            props.Add($"\"extra_crew_needed\":{crew}");
-            props.Add($"\"costs\":[{costs}]");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"name\":\"{name}\"",
+                $"\"range\":{range}",
+                $"\"damage\":{damage}",
+                $"\"extra_crew_needed\":{crew}",
+                $"\"costs\":[{costs}]"
+            });
         }
 
-        public static string MakeArmorJsonObject(
-            string name,
-            string hp,
-            string armor,
-            string costs
-        )
+        public static string MakeArmorJsonObject(string name, string hp, string armor, string costs)
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"hp_upgrade\":{hp}");
-            props.Add($"\"armor_upgrade\":{armor}");
-            props.Add($"\"costs\":[{costs}]");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"name\":\"{name}\"",
+                $"\"hp_upgrade\":{hp}",
+                $"\"armor_upgrade\":{armor}",
+                $"\"costs\":[{costs}]"
+            });
         }
 
-        public static string MakeBridgeJsonObject(
-            string name,
-            string hp,
-            string radar,
-            string crew,
-            string costs
-        )
+        public static string MakeBridgeJsonObject(string name, string hp, string radar, string crew, string costs)
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"hp_upgrade\":{hp}");
-            props.Add($"\"radar_upgrade\":{radar}");
-            props.Add($"\"extra_crew_needed\":{crew}");
-            props.Add($"\"costs\":[{costs}]");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"name\":\"{name}\"",
+                $"\"hp_upgrade\":{hp}",
+                $"\"radar_upgrade\":{radar}",
+                $"\"extra_crew_needed\":{crew}",
+                $"\"costs\":[{costs}]"
+            });
         }
 
-        public static string MakeTankJsonObject(
-            string name,
-            string added_capacity,
-            string costs
-        )
+        public static string MakeTankJsonObject(string name, string added_capacity, string costs)
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"added_capacity\":{added_capacity}");
-            props.Add($"\"costs\":[{costs}]");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"name\":\"{name}\"",
+                $"\"added_capacity\":{added_capacity}",
+                $"\"costs\":[{costs}]"
+            });
         }
 
         public static string MakeProductJsonObject(
-            string id,
-            string name,
-            string type,
-            string icon,
-            ColorRgba color,
-            FormatInfo format
+            string id, string name, string type, string icon,
+            ColorRgba color, FormatInfo format
         )
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"id\":\"{id}\"");
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"icon\":\"{productNameToIcon(name)}\"");
-            props.Add($"\"type\":\"{type}\"");
-            props.Add($"\"icon_path\":\"{icon}\"");
-            // Make sure we don't add "default" colors. 
+            var props = new List<string>
+            {
+                $"\"id\":\"{id}\"",
+                $"\"name\":\"{name}\"",
+                $"\"icon\":\"{productNameToIcon(name)}\"",
+                $"\"type\":\"{type}\"",
+                $"\"icon_path\":\"{icon}\""
+            };
             if (color.A > 0) props.Add($"\"color\":\"{color}\"");
             props.Add($"\"unit\":\"{format.UnitStr}\"");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(props);
         }
 
         public static string MakeTerrainMaterialJsonObject(
-            string id,
-            string name,
-            string mined_product,
-            string mining_hardness,
-            string mined_quantity_per_tile_cubed,
-            string disruption_recovery_time,
-            string is_hardened_floor,
-            string max_collapse_height_diff,
-            string min_collapse_height_diff,
-            string mined_quantity_mult,
+            string id, string name, string mined_product, string mining_hardness,
+            string mined_quantity_per_tile_cubed, string disruption_recovery_time,
+            string is_hardened_floor, string max_collapse_height_diff,
+            string min_collapse_height_diff, string mined_quantity_mult,
             string vehicle_traversal_cost
         )
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"id\":\"{id}\"");
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"mined_product\":\"{mined_product}\"");
-            props.Add($"\"mining_hardness\":\"{mining_hardness}\"");
-            props.Add($"\"mined_quantity_per_tile_cubed\":{mined_quantity_per_tile_cubed}");
-            props.Add($"\"disruption_recovery_time\":{disruption_recovery_time}");
-            props.Add($"\"is_hardened_floor\":{is_hardened_floor}");
-            props.Add($"\"max_collapse_height_diff\":{max_collapse_height_diff}");
-            props.Add($"\"min_collapse_height_diff\":{min_collapse_height_diff}");
-            props.Add($"\"mined_quantity_mult\":\"{mined_quantity_mult}\"");
-            props.Add($"\"vehicle_traversal_cost\":{vehicle_traversal_cost}");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"id\":\"{id}\"",
+                $"\"name\":\"{name}\"",
+                $"\"mined_product\":\"{mined_product}\"",
+                $"\"mining_hardness\":\"{mining_hardness}\"",
+                $"\"mined_quantity_per_tile_cubed\":{mined_quantity_per_tile_cubed}",
+                $"\"disruption_recovery_time\":{disruption_recovery_time}",
+                $"\"is_hardened_floor\":{is_hardened_floor}",
+                $"\"max_collapse_height_diff\":{max_collapse_height_diff}",
+                $"\"min_collapse_height_diff\":{min_collapse_height_diff}",
+                $"\"mined_quantity_mult\":\"{mined_quantity_mult}\"",
+                $"\"vehicle_traversal_cost\":{vehicle_traversal_cost}"
+            });
         }
 
         public static string MakeContractJsonObject(
-           string id,
-           string product_to_buy_name,
-           string product_to_buy_quantity,
-           string product_to_pay_with_name,
-           string product_to_pay_with_quantity,
-           string unity_per_month,
-           string unity_per_100_bought,
-           string unity_to_establish,
-           string min_reputation_required
+           string id, string product_to_buy_name, string product_to_buy_quantity,
+           string product_to_pay_with_name, string product_to_pay_with_quantity,
+           string unity_per_month, string unity_per_100_bought,
+           string unity_to_establish, string min_reputation_required
        )
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"id\":\"{id}\"");
-            props.Add($"\"product_to_buy_name\":\"{product_to_buy_name}\"");
-            props.Add($"\"product_to_buy_quantity\":{product_to_buy_quantity}");
-            props.Add($"\"product_to_pay_with_name\":\"{product_to_pay_with_name}\"");
-            props.Add($"\"product_to_pay_with_quantity\":{product_to_pay_with_quantity}");
-            props.Add($"\"unity_per_month\":{unity_per_month}");
-            props.Add($"\"unity_per_100_bought\":{unity_per_100_bought}");
-            props.Add($"\"unity_to_establish\":{unity_to_establish}");
-            props.Add($"\"min_reputation_required\":{min_reputation_required}");
-
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"id\":\"{id}\"",
+                $"\"product_to_buy_name\":\"{product_to_buy_name}\"",
+                $"\"product_to_buy_quantity\":{product_to_buy_quantity}",
+                $"\"product_to_pay_with_name\":\"{product_to_pay_with_name}\"",
+                $"\"product_to_pay_with_quantity\":{product_to_pay_with_quantity}",
+                $"\"unity_per_month\":{unity_per_month}",
+                $"\"unity_per_100_bought\":{unity_per_100_bought}",
+                $"\"unity_to_establish\":{unity_to_establish}",
+                $"\"min_reputation_required\":{min_reputation_required}"
+            });
         }
 
-        public static string MakeResearchJsonObject(
-            string id,
-            string name,
-            string difficulty,
-            string total_steps
-        )
+        public static string MakeResearchJsonObject(string id, string name, string difficulty, string total_steps)
         {
-            System.Text.StringBuilder obj = new System.Text.StringBuilder();
-
-            List<string> props = new List<string> { };
-
-            props.Add($"\"id\":\"{id}\"");
-            props.Add($"\"name\":\"{name}\"");
-            props.Add($"\"difficulty\":{difficulty}");
-            props.Add($"\"total_steps\":{total_steps}");
-
-            obj.AppendLine("{");
-            obj.AppendLine(props.JoinStrings(","));
-            obj.AppendLine("}");
-            return obj.ToString();
+            return WrapJsonObject(new List<string>
+            {
+                $"\"id\":\"{id}\"",
+                $"\"name\":\"{name}\"",
+                $"\"difficulty\":{difficulty}",
+                $"\"total_steps\":{total_steps}"
+            });
         }
 
         public static string productNameToIcon(string n)
         {
-            n = n.Replace("(", "");
-            n = n.Replace(")", "");
-            if (n.EndsWith(" IV"))
-                n = n.Replace(" IV", "4");
-            if (n.EndsWith(" V"))
-                n = n.Replace(" V", "5");
-            if (n.EndsWith(" III"))
-                n = n.Replace(" III", "3");
-            if (n.EndsWith(" II"))
-                n = n.Replace(" II", "2");
-            if (n.EndsWith(" I"))
-                n = n.Replace(" I", "1");
-            n = n.Replace(" ", "");
-            return n;
+            n = n.Replace("(", "").Replace(")", "");
+            // Order matters: check longest suffixes first to avoid partial matches
+            string[] romanNumerals = { " IV", " III", " II", " V", " I" };
+            string[] arabicDigits = { "4", "3", "2", "5", "1" };
+            for (int i = 0; i < romanNumerals.Length; i++)
+            {
+                if (n.EndsWith(romanNumerals[i]))
+                {
+                    n = n.Substring(0, n.Length - romanNumerals[i].Length) + arabicDigits[i];
+                    break;
+                }
+            }
+            return n.Replace(" ", "");
         }
 
         public static string MakeRecipeJsonObject(
@@ -714,50 +576,32 @@ namespace DataExtractorMod
             string defaultName = ""
         )
         {
-            String stage = "Begin";
             try
             {
                 var duration = (recipe.Duration.Ticks / 10.0f);
-                var inputs = recipe.AllUserVisibleInputs;
-                var outputs = recipe.AllUserVisibleOutputs;
 
                 string recipe_id = recipe.Id.ToString();
-                string recipe_name = (recipe is RecipeProto) ? ((RecipeProto)recipe).Strings.Name.ToString() : recipe.Id.ToString();
-                if (recipe_id.Equals("RecipeForUiData") && !defaultId.IsEmpty())
-                {
-                    recipe_id = defaultId;
-                }
-                if (recipe_name.Equals("RecipeForUiData") && !defaultName.IsEmpty())
-                {
-                    recipe_name = defaultName;
-                }
-                string recipe_duration = duration <= 0.1f ? "0" : duration.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-                float power_mult = Percent.Hundred.ToFloat();
-                stage = "Before PowerMultiplier";
-                if (recipe is RecipeProto)
-                {
-                    power_mult = ((RecipeProto)recipe).PowerMultiplier.ToFloat();
-                }
-                List<string> inputItems = new List<string> { };
-                List<string> outputItems = new List<string> { };
-                stage = "Before Inputs Loop";
-                inputs.ForEach(delegate (RecipeInput input)
-                {
-                    stage = "Inside Inputs Loop for " + input.Product.Strings.Name.ToString();
-                    Option<ProductProto> product = protosDb.Get<ProductProto>(input.Product.Id);
-                    string machineRecipeInputJson = MakeRecipeIOJsonObject(input.Product.Strings.Name.ToString(), input.Quantity.Value.ToString());
-                    inputItems.Add(machineRecipeInputJson);
-                });
+                string recipe_name = (recipe is RecipeProto recipeProto)
+                    ? recipeProto.Strings.Name.ToString()
+                    : recipe.Id.ToString();
 
-                outputs.ForEach(delegate (RecipeOutput output)
-                {
-                    stage = "Inside Outputs Loop for " + output.Product.Strings.Name.ToString();
-                    Option<ProductProto> product = protosDb.Get<ProductProto>(output.Product.Id);
-                    string machineRecipeOutputJson = MakeRecipeIOJsonObject(output.Product.Strings.Name.ToString(), output.Quantity.Value.ToString());
-                    outputItems.Add(machineRecipeOutputJson);
-                });
-                stage = "Before MakeRecipeJsonObject";
-                string machineRecipeJson = MakeRecipeJsonObject(
+                if (recipe_id.Equals("RecipeForUiData") && !defaultId.IsEmpty())
+                    recipe_id = defaultId;
+                if (recipe_name.Equals("RecipeForUiData") && !defaultName.IsEmpty())
+                    recipe_name = defaultName;
+
+                string recipe_duration = duration <= 0.1f ? "0" : duration.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                float power_mult = (recipe is RecipeProto rp) ? rp.PowerMultiplier.ToFloat() : Percent.Hundred.ToFloat();
+
+                var inputItems = new List<string>();
+                foreach (RecipeInput input in recipe.AllUserVisibleInputs)
+                    inputItems.Add(MakeRecipeIOJsonObject(input.Product.Strings.Name.ToString(), input.Quantity.Value.ToString()));
+
+                var outputItems = new List<string>();
+                foreach (RecipeOutput output in recipe.AllUserVisibleOutputs)
+                    outputItems.Add(MakeRecipeIOJsonObject(output.Product.Strings.Name.ToString(), output.Quantity.Value.ToString()));
+
+                return MakeRecipeJsonObject(
                     recipe_id,
                     recipe_name,
                     recipe_duration,
@@ -765,14 +609,11 @@ namespace DataExtractorMod
                     outputItems.JoinStrings(","),
                     power_mult
                 );
-                return machineRecipeJson;
             }
             catch (Exception e)
             {
-                Log.Info("###################################################");
-                Log.Info("ERROR in MakeRecipeJsonObject at stage: " + stage);
-                Log.Info("###################################################");
-                throw e;
+                LogError("MakeRecipeJsonObject");
+                throw;
             }
         }
 
@@ -843,36 +684,17 @@ namespace DataExtractorMod
             IEnumerable<FleetEnginePartProto> engines = protosDb.All<FleetEnginePartProto>();
             foreach (FleetEnginePartProto item in engines)
             {
-
                 try
                 {
-
-                    List<string> vehicleProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in item.Value.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        vehicleProducts.Add(vehicleProductJson);
-                    }
-
                     string vehicleJson = MakeEngineJsonObject(
                         item.Strings.Name.ToString(),
                         item.FuelCapacity.ToString(),
                         item.ExtraCrew.BonusValue.ToString(),
-                        vehicleProducts.JoinStrings(",")
+                        FormatProductCosts(item.Value.Products)
                     );
                     engineItems.Add(vehicleJson);
-
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(item.ToString()); }
 
             }
             upgradeItems.Add($"\"engines\":[{engineItems.JoinStrings(",")}]");
@@ -880,37 +702,18 @@ namespace DataExtractorMod
             IEnumerable<FleetWeaponProto> guns = protosDb.All<FleetWeaponProto>();
             foreach (FleetWeaponProto item in guns)
             {
-
                 try
                 {
-
-                    List<string> vehicleProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in item.Value.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        vehicleProducts.Add(vehicleProductJson);
-                    }
-
                     string vehicleJson = MakeGunJsonObject(
                         item.Strings.Name.ToString(),
                         item.Range.ToString(),
                         item.Damage.ToString(),
                         item.ExtraCrew.BonusValue.ToString(),
-                        vehicleProducts.JoinStrings(",")
+                        FormatProductCosts(item.Value.Products)
                     );
                     gunItems.Add(vehicleJson);
-
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(item.ToString()); }
 
             }
             upgradeItems.Add($"\"weapons\":[{gunItems.JoinStrings(",")}]");
@@ -918,35 +721,17 @@ namespace DataExtractorMod
             IEnumerable<UpgradeHullProto> armor = protosDb.All<UpgradeHullProto>();
             foreach (UpgradeHullProto item in armor)
             {
-
                 try
                 {
-                    List<string> vehicleProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in item.Value.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        vehicleProducts.Add(vehicleProductJson);
-                    }
-
                     string vehicleJson = MakeArmorJsonObject(
                         item.Strings.Name.ToString(),
                         "0",
                         "0",
-                        vehicleProducts.JoinStrings(",")
+                        FormatProductCosts(item.Value.Products)
                     );
                     armorItems.Add(vehicleJson);
-
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(item.ToString()); }
 
             }
             upgradeItems.Add($"\"armor\":[{armorItems.JoinStrings(",")}]");
@@ -954,37 +739,18 @@ namespace DataExtractorMod
             IEnumerable<FleetBridgePartProto> bridges = protosDb.All<FleetBridgePartProto>();
             foreach (FleetBridgePartProto item in bridges)
             {
-
                 try
                 {
-
-                    List<string> vehicleProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in item.Value.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        vehicleProducts.Add(vehicleProductJson);
-                    }
-
                     string vehicleJson = MakeBridgeJsonObject(
                         item.Strings.Name.ToString(),
                         "0",
                         "0",
                         item.ExtraCrew.BonusValue.ToString(),
-                        vehicleProducts.JoinStrings(",")
+                        FormatProductCosts(item.Value.Products)
                     );
                     bridgeItems.Add(vehicleJson);
-
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(item.ToString()); }
 
             }
             upgradeItems.Add($"\"bridges\":[{bridgeItems.JoinStrings(",")}]");
@@ -992,35 +758,16 @@ namespace DataExtractorMod
             IEnumerable<FleetFuelTankPartProto> tanks = protosDb.All<FleetFuelTankPartProto>();
             foreach (FleetFuelTankPartProto item in tanks)
             {
-
                 try
                 {
-
-                    List<string> vehicleProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in item.Value.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        vehicleProducts.Add(vehicleProductJson);
-                    }
-
                     string vehicleJson = MakeTankJsonObject(
                         item.Strings.Name.ToString(),
                         item.AddedFuelCapacity.ToString(),
-                        vehicleProducts.JoinStrings(",")
+                        FormatProductCosts(item.Value.Products)
                     );
                     tankItems.Add(vehicleJson);
-
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(item.ToString()); }
 
             }
             upgradeItems.Add($"\"fuel_tanks\":[{tankItems.JoinStrings(",")}]");
@@ -1035,49 +782,22 @@ namespace DataExtractorMod
 
             List<string> vehicleItems = new List<string> { };
 
-            List<DrivingEntityProto> vehicles = new List<DrivingEntityProto> { };
-            foreach (TruckProto vehicle in protosDb.All<TruckProto>())
-            {
-                vehicles.Add(vehicle);
-            }
-            foreach (ExcavatorProto vehicle in protosDb.All<ExcavatorProto>())
-            {
-                vehicles.Add(vehicle);
-            }
-            foreach (TreeHarvesterProto vehicle in protosDb.All<TreeHarvesterProto>())
-            {
-                vehicles.Add(vehicle);
-            }
+            var vehicles = new List<DrivingEntityProto>();
+            vehicles.AddRange(protosDb.All<TruckProto>());
+            vehicles.AddRange(protosDb.All<ExcavatorProto>());
+            vehicles.AddRange(protosDb.All<TreeHarvesterProto>());
 
             foreach (DrivingEntityProto vehicle in vehicles)
             {
-
                 try
                 {
-                    List<string> vehicleProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in vehicle.CostToBuild.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        vehicleProducts.Add(vehicleProductJson);
-                    }
-
                     string vehicleJson = MakeVehicleJsonObject(
                         vehicle.Strings.Name.ToString(),
-                        vehicleProducts.JoinStrings(",")
+                        FormatProductCosts(vehicle.CostToBuild.Products)
                     );
                     vehicleItems.Add(vehicleJson);
-
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + vehicle.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(vehicle.ToString()); }
 
             }
 
@@ -1120,25 +840,13 @@ namespace DataExtractorMod
                         next_tier = generator.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in generator.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
-;
-                    List<string> machinesProducts = new List<string> { };
+                    foreach (var cat in generator.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    foreach (ProductQuantity cost in generator.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(generator.Costs.BaseConstructionCost.Products);
 
                     List<string> recipeItems = MakeRecipesJsonObject(protosDb, new IRecipeForUi[] { generator.Recipe });
 
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -1155,19 +863,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         generator.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipeItems.JoinStrings(","),
                         generator.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + generator.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(generator.ToString()); }
             }
             Log.Info("Completed Turbines");
 
@@ -1195,21 +898,9 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in generator.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
-;
-                    List<string> machinesProducts = new List<string> { };
+                    foreach (var cat in generator.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    foreach (ProductQuantity cost in generator.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(generator.Costs.BaseConstructionCost.Products);
 
                     List<string> recipeItems = MakeRecipesJsonObject(protosDb, new IRecipeForUi[] { generator.Recipe });
 
@@ -1231,19 +922,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         generator.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipeItems.JoinStrings(","),
                         generator.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + generator.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(generator.ToString()); }
             }
             Log.Info("Completed Generators");
 
@@ -1271,21 +957,9 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in generator.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
-;
-                    List<string> machinesProducts = new List<string> { };
+                    foreach (var cat in generator.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    foreach (ProductQuantity cost in generator.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(generator.Costs.BaseConstructionCost.Products);
 
                     string machineJson = MakeMachineJsonObject(
                         id,
@@ -1302,19 +976,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         generator.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         generator.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + generator.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(generator.ToString()); }
             }
 
             Log.Info("Completed Solar Panels");
@@ -1343,21 +1012,9 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in generator.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
-;
-                    List<string> machinesProducts = new List<string> { };
+                    foreach (var cat in generator.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    foreach (ProductQuantity cost in generator.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(generator.Costs.BaseConstructionCost.Products);
 
                     List<string> recipeItems = MakeRecipesJsonObject(protosDb, new IRecipeForUi[] { generator.Recipe });
 
@@ -1376,19 +1033,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         generator.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipeItems.JoinStrings(","),
                         generator.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + generator.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(generator.ToString()); }
             }
 
             Log.Info("Completed Diesel Generators");
@@ -1429,25 +1081,13 @@ namespace DataExtractorMod
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     List<string> recipeItems = MakeRecipesJsonObject(protosDb, machineRecipes);
 
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -1464,19 +1104,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipeItems.JoinStrings(","),
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + machine.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(machine.ToString()); }
             }
 
             Log.Info("Completed General Machines");
@@ -1521,21 +1156,9 @@ namespace DataExtractorMod
                         next_tier = item.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in item.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in item.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in item.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(item.Costs.BaseConstructionCost.Products);
 
                     //recipes are build for max fertility
                     List<string> recipeItems = new List<string> { };
@@ -1599,7 +1222,7 @@ namespace DataExtractorMod
 
                     }
 
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -1616,19 +1239,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         item.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipeItems.JoinStrings(","),
                         item.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(item.ToString()); }
             }
             Log.Info("Completed Farms");
 
@@ -1659,21 +1277,9 @@ namespace DataExtractorMod
                         next_tier = item.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in item.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in item.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in item.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(item.Costs.BaseConstructionCost.Products);
 
                     //recipe is built for max animals (500 chickens)
                     List<string> recipeItems = new List<string> { };
@@ -1708,7 +1314,7 @@ namespace DataExtractorMod
                     );
                     recipeItems.Add(machineRecipeJson);
 
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -1725,19 +1331,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         item.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         machineRecipeJson,
                         item.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(item.ToString()); }
             }
             Log.Info("Completed Animal Farms");
 
@@ -1768,23 +1369,11 @@ namespace DataExtractorMod
                         next_tier = item.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in item.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in item.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
+                    string buildCosts = FormatProductCosts(item.Costs.BaseConstructionCost.Products);
 
-                    foreach (ProductQuantity cost in item.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
-
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -1801,19 +1390,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         item.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         item.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(item.ToString()); }
             }
             Log.Info("Completed Cargo Depots");
 
@@ -1844,23 +1428,11 @@ namespace DataExtractorMod
                         next_tier = item.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in item.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in item.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
+                    string buildCosts = FormatProductCosts(item.Costs.BaseConstructionCost.Products);
 
-                    foreach (ProductQuantity cost in item.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
-
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -1877,19 +1449,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         item.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         item.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError(item.ToString()); }
             }
             Log.Info("Completed Cargo Modules");
 
@@ -1952,23 +1519,11 @@ namespace DataExtractorMod
                         }
                     }
 
-                    foreach (var cat in item.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in item.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
+                    string buildCosts = FormatProductCosts(item.Costs.BaseConstructionCost.Products);
 
-                    foreach (ProductQuantity cost in item.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
-
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -1985,7 +1540,7 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed.ToString(),
                         item.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipes,
                         item.Layout.LayoutSize
                     );
@@ -1994,9 +1549,7 @@ namespace DataExtractorMod
                 }
                 catch
                 {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR" + item.ToString() + item.Id.ToString());
-                    Log.Info("###################################################");
+                    LogError(item.ToString() + item.Id.ToString());
                 }
             }
             Log.Info("Completed Research Labs");
@@ -2028,23 +1581,11 @@ namespace DataExtractorMod
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
-
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -2061,19 +1602,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
             Log.Info("Completed Vehicle Depots");
 
@@ -2104,23 +1640,11 @@ namespace DataExtractorMod
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
-
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -2137,7 +1661,7 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         machine.Layout.LayoutSize
                     );
@@ -2145,12 +1669,7 @@ namespace DataExtractorMod
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
             Log.Info("Completed Fuel Stations");
 
@@ -2161,65 +1680,43 @@ namespace DataExtractorMod
             */
             List<string> productsJson = new List<string> { };
 
-            List<string> countProdNames = new List<string> { };
-            List<string> looseProdNames = new List<string> { };
-            List<string> fluidProdNames = new List<string> { };
-            List<string> moltenProdNames = new List<string> { };
-            List<string> virtualProdNames = new List<string> { };
+            var prodNamesByType = new Dictionary<string, List<string>>
+            {
+                { "CountableProductProto", new List<string>() },
+                { "LooseProductProto", new List<string>() },
+                { "FluidProductProto", new List<string>() },
+                { "MoltenProductProto", new List<string>() },
+                { "VirtualProductProto", new List<string>() }
+            };
             try
             {
-                IEnumerable<ProductProto> products = protosDb.All<ProductProto>();
-                foreach (ProductProto product in products)
+                foreach (ProductProto product in protosDb.All<ProductProto>())
                 {
+                    string typeName = null;
+                    if (product is CountableProductProto) typeName = "CountableProductProto";
+                    else if (product is LooseProductProto) typeName = "LooseProductProto";
+                    else if (product is FluidProductProto) typeName = "FluidProductProto";
+                    else if (product is MoltenProductProto) typeName = "MoltenProductProto";
+                    else if (product is VirtualProductProto) typeName = "VirtualProductProto";
 
-                    string type = null;
-                    if (product is CountableProductProto)
+                    if (typeName != null)
                     {
-                        countProdNames.Add(product.Strings.Name.ToString());
-                        type = product.Type.ToString();
-                    }
-                    else if (product is LooseProductProto)
-                    {
-                        looseProdNames.Add(product.Strings.Name.ToString());
-                        type = product.Type.ToString();
-                    }
-                    else if (product is FluidProductProto)
-                    {
-                        fluidProdNames.Add(product.Strings.Name.ToString());
-                        type = product.Type.ToString();
-                    }
-                    else if (product is MoltenProductProto)
-                    {
-                        moltenProdNames.Add(product.Strings.Name.ToString());
-                        type = product.Type.ToString();
-                    }
-                    else if (product is VirtualProductProto)
-                    {
-                        virtualProdNames.Add(product.Strings.Name.ToString());
-                        type = product.Type.ToString();
-
-                    }
-                    if (type != null)
-                    {
+                        prodNamesByType[typeName].Add(product.Strings.Name.ToString());
                         var isSteam = product.Strings.Name.ToString().Contains("Steam");
                         productsJson.Add(MakeProductJsonObject(
                             product.Id.ToString(),
                             product.Strings.Name.ToString(),
-                            type,
+                            product.Type.ToString(),
                             product.IconPath,
                             isSteam ? product.Graphics.TransportAccentColor : product.Graphics.TransportColor,
                             product.QuantityFormatter.GetFormatInfo(product, 1)
                            ));
                     }
-
                 }
             }
             catch (Exception ex)
             {
-                Log.Info("###################################################");
-                Log.Info("ERROR Products");
-                Log.Info("###################################################");
-                Log.Error(ex.ToString());
+                LogError("Products", ex);
             }
             Log.Info("Completed Products");
 
@@ -2255,68 +1752,25 @@ namespace DataExtractorMod
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
-
-                    List<string> StorageInputs = new List<string> { };
-
-                    if (machine.ProductType.Value.ToString() == "CountableProductProto")
-                    {
-                        StorageInputs = countProdNames;
-                    }
-
-                    if (machine.ProductType.Value.ToString() == "LooseProductProto")
-                    {
-                        StorageInputs = looseProdNames;
-                    }
-
-                    if (machine.ProductType.Value.ToString() == "FluidProductProto")
-                    {
-                        StorageInputs = fluidProdNames;
-                    }
+                    string productTypeKey = machine.ProductType.Value.ToString();
+                    List<string> StorageInputs;
+                    if (!prodNamesByType.TryGetValue(productTypeKey, out StorageInputs))
+                        StorageInputs = new List<string>();
 
                     List<string> recipeItems = new List<string> { };
 
                     foreach (string input in StorageInputs)
                     {
-
-                        var duration = 0;
-
                         string recipe_name = input + " Storage";
-                        string recipe_duration = duration.ToString();
-
-                        List<string> inputItems = new List<string> { };
-                        List<string> outputItems = new List<string> { };
-
-                        string machineRecipeInputJson = MakeRecipeIOJsonObject(input, machine.Capacity.ToString());
-                        inputItems.Add(machineRecipeInputJson);
-                        outputItems.Add(machineRecipeInputJson);
-
-                        string machineRecipeJson = MakeRecipeJsonObject(
-                            recipe_name,
-                            recipe_name,
-                            recipe_duration,
-                            inputItems.JoinStrings(","),
-                            outputItems.JoinStrings(",")
-                        );
-                        recipeItems.Add(machineRecipeJson);
-
+                        string ioJson = MakeRecipeIOJsonObject(input, machine.Capacity.ToString());
+                        recipeItems.Add(MakeRecipeJsonObject(recipe_name, recipe_name, "0", ioJson, ioJson));
                     }
 
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -2333,13 +1787,13 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
-                    string storageJson = MakeMachineJsonObject2(
+                    string storageJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -2356,7 +1810,7 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipeItems.JoinStrings(","),
                         machine.Layout.LayoutSize
 
@@ -2364,12 +1818,7 @@ namespace DataExtractorMod
                     storageItems.Add(storageJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             IEnumerable<SettlementHousingModuleProto> housing = protosDb.All<SettlementHousingModuleProto>();
@@ -2393,21 +1842,9 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     string machineJson = MakeMachineJsonObject(
                         id,
@@ -2424,19 +1861,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             IEnumerable<MineTowerProto> mines = protosDb.All<MineTowerProto>();
@@ -2460,21 +1892,9 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     string machineJson = MakeMachineJsonObject(
                         id,
@@ -2491,19 +1911,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             IEnumerable<SettlementWasteModuleProto> housingWaste = protosDb.All<SettlementWasteModuleProto>();
@@ -2527,21 +1942,9 @@ namespace DataExtractorMod
                     string computing_consumed = "0";
                     string computing_generated = "0";
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     string machineJson = MakeMachineJsonObject(
                         id,
@@ -2558,19 +1961,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             IEnumerable<SettlementFoodModuleProto> housingFood = protosDb.All<SettlementFoodModuleProto>();
@@ -2594,21 +1992,9 @@ namespace DataExtractorMod
                     string computing_consumed = "0";
                     string computing_generated = "0";
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     string machineJson = MakeMachineJsonObject(
                         id,
@@ -2625,19 +2011,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             IEnumerable<SettlementModuleProto> housingNeed = protosDb.All<SettlementModuleProto>();
@@ -2661,21 +2042,9 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     string machineJson = MakeMachineJsonObject(
                         id,
@@ -2692,19 +2061,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             IEnumerable<NuclearReactorProto> reactors = protosDb.All<NuclearReactorProto>();
@@ -2732,20 +2096,9 @@ namespace DataExtractorMod
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     List<string> recipeItems = new List<string> { };
 
@@ -2847,7 +2200,7 @@ namespace DataExtractorMod
                         quantityOut = 30
                     };
 
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -2864,7 +2217,7 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipeItems.JoinStrings(","),
                         machine.Layout.LayoutSize,
                         machineCoolant
@@ -2875,21 +2228,14 @@ namespace DataExtractorMod
                     DumpObject(DUMP, id + "FuelPairs", machine.FuelPairs.AsEnumerable());
                     DumpObject(DUMP, id + "Enrichment", machine.Enrichment.HasValue ? machine.Enrichment.Value : null);
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             IEnumerable<RocketAssemblyBuildingProto> rocketAssembly = protosDb.All<RocketAssemblyBuildingProto>();
             foreach (RocketAssemblyBuildingProto machine in rocketAssembly)
             {
-
                 try
                 {
-
                     string id = machine.Id.ToString();
                     string name = machine.Strings.Name.ToString();
                     string category = "";
@@ -2904,20 +2250,33 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
+                    List<string> recipeItems = new List<string> { };
+                    foreach (var ent in machine.BuildableEntities) {
+                        if (ent == null || ent.Costs.BaseConstructionCost == null) continue;
+                        List<string> inputItems = new List<string> { };
+                        List<string> outputItems = new List<string> { };
+                        string machineRecipeJson;
 
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
+                        foreach (var prod in ent.Costs.BaseConstructionCost.Products)
+                        {
+                            if (prod.Product == null) continue;
+                            inputItems.Add(MakeRecipeIOJsonObject(prod.Product.Strings.Name.ToString(), prod.Quantity.ToStringSafe()));
+                        }
+
+                        machineRecipeJson = MakeRecipeIOJsonObject(ent.Strings.Name.ToString(), "1");
+                        outputItems.Add(machineRecipeJson);
+
+                        machineRecipeJson = MakeRecipeJsonObject(
+                            machine.Id.ToString() + "-" + ent.Id.ToString(),
+                            ent.Id.ToString(),
+                            ent.BuildDurationPerProduct.Seconds.ToString() + ent.BuildExtraDuration.Seconds.ToString(),
+                            inputItems.JoinStrings(","),
+                            outputItems.JoinStrings(",")
                         );
-                        machinesProducts.Add(vehicleProductJson);
+                        recipeItems.Add(machineRecipeJson);
                     }
 
                     string machineJson = MakeMachineJsonObject(
@@ -2935,19 +2294,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
-                        "",
+                        buildCosts,
+                        recipeItems.JoinStrings(","),
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch(Exception e) { LogError("Depot " + machine.Id.ToString() + "\n" + e.ToString()); }
             }
 
             IEnumerable<RocketLaunchPadProto> rocketPad = protosDb.All<RocketLaunchPadProto>();
@@ -2971,21 +2325,9 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     string machineJson = MakeMachineJsonObject(
                         id,
@@ -3002,19 +2344,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             IEnumerable<WasteSortingPlantProto> wastePlant = protosDb.All<WasteSortingPlantProto>();
@@ -3044,22 +2381,10 @@ namespace DataExtractorMod
                         next_tier = machine.Upgrade.NextTier.Value.Id.ToString();
                     }
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
                     Log.Info("WasteSortingPlant Gathered categories");
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
                     Log.Info("WasteSortingPlant Gathered products");
                     List<string> recipeItems = new List<string> { };
                     if (machine.Recipes != null)
@@ -3067,7 +2392,7 @@ namespace DataExtractorMod
                         recipeItems = MakeRecipesJsonObject(protosDb, machine.Recipes.AsEnumerable(), id, name);
                     }
                     Log.Info("WasteSortingPlant Gathered recipes");
-                    string machineJson = MakeMachineJsonObject2(
+                    string machineJson = MakeMachineJsonObject(
                         id,
                         name,
                         category,
@@ -3084,7 +2409,7 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipeItems.JoinStrings(","),
                         machine.Layout.LayoutSize
                     );
@@ -3094,13 +2419,75 @@ namespace DataExtractorMod
                 }
                 catch (Exception e)
                 {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR WasteSortingPlant " + machine.Id.ToString());
-                    Log.Info("###################################################");
-                    Log.Error(e.ToString());
+                    LogError("WasteSortingPlant " + machine.Id.ToString(), e);
                     Log.Error("LineNum:" + (new StackTrace(e, true).GetFrame(0).GetFileLineNumber().ToString()));
                 }
             }
+
+            IEnumerable<ThermalStorageProto> thermalStorageProtos = protosDb.All<ThermalStorageProto>();
+            foreach (ThermalStorageProto machine in thermalStorageProtos)
+            {
+
+                try
+                {
+
+                    string id = machine.Id.ToString();
+                    string name = machine.Strings.Name.ToString();
+                    string category = "";
+                    string workers = machine.Costs.Workers.ToString();
+                    string maintenance_cost_units = machine.Costs.Maintenance.Product.Strings.Name.ToString();
+                    string maintenance_cost_quantity = machine.Costs.Maintenance.MaintenancePerMonth.Value.ToString();
+                    string electricity_consumed = "0";
+                    string electricity_generated = "0";
+                    string computing_consumed = "0";
+                    string computing_generated = "0";
+                    string product_type = "";
+                    string capacity = machine.Capacity.ToString();
+                    string unity_cost = "0";
+                    string research_speed = "0";
+                    string next_tier = "";
+                    // No next tier checks needed
+
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
+
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
+
+                    List<string> recipeItems = new List<string> { };
+                    if (machine.Recipes != null)
+                    {
+                        recipeItems = MakeRecipesJsonObject(protosDb, machine.Recipes.AsEnumerable(), id, name);
+                    }
+
+                    string machineJson = MakeMachineJsonObject(
+                        id,
+                        name,
+                        category,
+                        next_tier,
+                        workers,
+                        maintenance_cost_units,
+                        maintenance_cost_quantity,
+                        electricity_consumed,
+                        electricity_generated,
+                        computing_consumed,
+                        computing_generated,
+                        product_type,
+                        capacity,
+                        unity_cost,
+                        research_speed,
+                        machine.IconPath,
+                        buildCosts,
+                        recipeItems.JoinStrings(","),
+                        machine.Layout.LayoutSize
+                    );
+                    machineItems.Add(machineJson);
+
+                }
+                catch
+                {
+                    LogError("ThermalStorage " + machine.Id.ToString());
+                }
+            }
+            Log.Info("Completed Thermal Storages");
 
             IEnumerable<RainwaterHarvesterProto> rainwaterHarvester = protosDb.All<RainwaterHarvesterProto>();
             foreach (RainwaterHarvesterProto machine in rainwaterHarvester)
@@ -3123,21 +2510,9 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     //machine.WaterCollectedPerDay.ToString() - wiki says 35-40 Units per year on average
                     //one day = 2 in game seconds, one month = 60 in game seconds
@@ -3165,7 +2540,7 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         machineRecipeJson,
                         machine.Layout.LayoutSize
                     );
@@ -3173,12 +2548,7 @@ namespace DataExtractorMod
 
                     DumpObject(DUMP, id, machine);
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot " + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             IEnumerable<DataCenterProto> dataCenters = protosDb.All<DataCenterProto>();
@@ -3203,21 +2573,9 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    foreach (var cat in machine.Graphics.Categories)
-                    {
-                        category = cat.CategoryProto.Strings.Name.ToString();
-                    }
+                    foreach (var cat in machine.Graphics.Categories) category = cat.CategoryProto.Strings.Name.ToString();
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    foreach (ProductQuantity cost in machine.Costs.BaseConstructionCost.Products)
-                    {
-                        string vehicleProductJson = MakeVehicleProductJsonObject(
-                            cost.Product.Strings.Name.ToString(),
-                            cost.Quantity.ToString()
-                        );
-                        machinesProducts.Add(vehicleProductJson);
-                    }
+                    string buildCosts = FormatProductCosts(machine.Costs.BaseConstructionCost.Products);
 
                     //generate recipe on max server racks (48)
                     int racks_capacity = machine.RacksCapacity;
@@ -3272,27 +2630,20 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         machine.IconPath,
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         recipeItems.JoinStrings(","),
                         machine.Layout.LayoutSize
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot " + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             foreach (ServerRackProto machine in dataRacks)
             {
-
                 try
                 {
-
                     string id = machine.Id.ToString();
                     string name = machine.Strings.Name.ToString();
                     string category = "Data center";
@@ -3307,13 +2658,10 @@ namespace DataExtractorMod
                     string unity_cost = "0";
                     string research_speed = "0";
 
-                    List<string> machinesProducts = new List<string> { };
-
-                    string vehicleProductJson = MakeVehicleProductJsonObject(
+                    string buildCosts = MakeVehicleProductJsonObject(
                             machine.ProductToAddThis.Product.Strings.Name.ToString(),
                             machine.ProductToAddThis.Quantity.Value.ToString()
                     );
-                    machinesProducts.Add(vehicleProductJson);
 
                     string machineJson = MakeMachineJsonObject(
                         id,
@@ -3330,19 +2678,14 @@ namespace DataExtractorMod
                         unity_cost,
                         research_speed,
                         "",
-                        machinesProducts.JoinStrings(","),
+                        buildCosts,
                         "",
                         new RelTile3i(0, 0, 0)
                     );
                     machineItems.Add(machineJson);
 
                 }
-                catch
-                {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Depot" + machine.Id.ToString());
-                    Log.Info("###################################################");
-                }
+                catch { LogError("Depot " + machine.Id.ToString()); }
             }
 
             /*
@@ -3388,11 +2731,9 @@ namespace DataExtractorMod
 
 
                 }
-                catch
+                catch (Exception ex)
                 {
-                    Log.Info("###################################################");
-                    Log.Info("ERROR Material" + material.Id.ToString());
-                    Log.Info("###################################################");
+                    LogError("Material " + material.Id.ToString(), ex);
                 }
 
             }
@@ -3441,16 +2782,7 @@ namespace DataExtractorMod
                 string maintenance_cost_units = "";
                 string maintenance_cost_quantity = "0";
 
-                List<string> machinesProducts = new List<string> { };
-
-                foreach (ProductQuantity cost in transport.Costs.BaseConstructionCost.Products)
-                {
-                    string vehicleProductJson = MakeVehicleProductJsonObject(
-                        cost.Product.Strings.Name.ToString(),
-                        cost.Quantity.ToString()
-                    );
-                    machinesProducts.Add(vehicleProductJson);
-                }
+                string buildCosts = FormatProductCosts(transport.Costs.BaseConstructionCost.Products);
 
                 string transportsJson = MakeTransportJsonObject(
                     transport.Id.ToString(),
@@ -3463,7 +2795,7 @@ namespace DataExtractorMod
                     (transport.ThroughputPerTick.Value * 10).ToString(),
                     transport.LengthPerCost.Value.ToString(),
                     transport.IconPath,
-                    machinesProducts.JoinStrings(",")
+                    buildCosts
                 );
                 transportItems.Add(transportsJson);
                 this.sprites.Add(transport.Id.ToString(), new spriteToExport() { category = category, icon = transport.IconPath });
@@ -3601,7 +2933,7 @@ namespace DataExtractorMod
                         else
                             incomplete = true;
                     }
-                    Log.Info("Total cost for tech " + current.Id.ToString() + " is " + currentCost.ToString() + " from " + current.Parents.Length.ToString() + " parents, incomplete=" + incomplete.ToString());
+                    //Log.Info("Total cost for tech " + current.Id.ToString() + " is " + currentCost.ToString() + " from " + current.Parents.Length.ToString() + " parents, incomplete=" + incomplete.ToString());
                     if (incomplete)
                         continue; // we're missing a parent cost, we'll pick it up later
 
